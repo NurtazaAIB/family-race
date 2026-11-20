@@ -57,6 +57,22 @@
     return r;
   };
 
+  // «Живой» случай: каждое число берётся из системного криптогенератора
+  // прямо во время гонки, поэтому исход заранее не определён ничем.
+  FR.trueRng = function () {
+    const buf = new Uint32Array(512);
+    let i = 512;
+    const r = function () {
+      if (i >= 512) { G.crypto.getRandomValues(buf); i = 0; }
+      return buf[i++] / 4294967296;
+    };
+    r.range = (a, b) => a + (b - a) * r();
+    r.int = (a, b) => Math.floor(a + (b - a + 1) * r());
+    r.pick = (arr) => arr[Math.floor(r() * arr.length)];
+    r.chance = (p) => r() < p;
+    return r;
+  };
+
   FR.hexToRgb = function (hex) {
     const h = hex.replace('#', '');
     const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);

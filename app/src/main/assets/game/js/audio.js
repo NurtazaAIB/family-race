@@ -153,6 +153,13 @@
     f.frequency.setValueAtTime(2400, t);
     f.frequency.exponentialRampToValueAtTime(400, t + 0.7);
   };
+  A.zap = function () {
+    if (!A.ctx) return;
+    const t = A.ctx.currentTime;
+    burst(t, 3000, 0.5, 0.5, 0.35, 'highpass');
+    const o = tone(1400, 'sawtooth', t, 0.003, 0.1, 0.3);
+    o.frequency.exponentialRampToValueAtTime(90, t + 0.3);
+  };
   A.beep = function (high) {
     if (!A.ctx) return;
     const t = A.ctx.currentTime;

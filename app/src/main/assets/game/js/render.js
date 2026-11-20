@@ -122,6 +122,29 @@
         case 'rail':
           for (let i = 0; i < 4; i++) this.spark(m.x, m.y, th.railHi, 90, 0.3);
           break;
+        case 'hit':
+          for (let i = 0; i < 18; i++) this.spark(m.x, m.y, ['#fff3b0', '#ff6b1a', '#ff3b3b'][i % 3], 200, 0.6);
+          this.flash = Math.max(this.flash || 0, 0.15);
+          break;
+        case 'slip':
+          for (let i = 0; i < 8; i++) this.spark(m.x, m.y, '#ffe066', 120, 0.4);
+          break;
+        case 'block':
+          for (let i = 0; i < 14; i++) this.spark(m.x, m.y, '#7fd8ff', 160, 0.5);
+          break;
+        case 'item': case 'turbo': case 'shield': case 'magnet':
+          for (let i = 0; i < 8; i++) this.spark(m.x, m.y, FR.PLAYER_COLORS[(Math.random() * 12) | 0], 120, 0.4);
+          break;
+        case 'brake':
+          for (let i = 0; i < 5; i++) this.spark(m.x, m.y, '#ff8a8a', 90, 0.3);
+          break;
+        case 'zap':
+          this.flash = 0.7;
+          for (const id of e.hit) {
+            const o = race.marbles[id];
+            for (let i = 0; i < 6; i++) this.spark(o.x, o.y, '#fff7a8', 140, 0.4);
+          }
+          break;
         case 'finish':
           for (let i = 0; i < (e.place === 0 ? 60 : 12); i++) this.confettiWorld(m.x, m.y);
           if (e.place === 0) this.burstScreen(70);
@@ -223,6 +246,7 @@
         if (this.fwTimer <= 0) { this.firework(); this.fwTimer = (this.lite ? 1.4 : 0.5) + Math.random() * 0.7; }
         if (Math.random() < realDt * 6) this.burstScreen(2);
       }
+      if (this.flash > 0) this.flash = Math.max(0, this.flash - realDt * 2.5);
       // вспышки штырьков
       for (const f of this.tr.feats) if (f.pegs) for (const p of f.pegs) if (p.flash > 0) p.flash = Math.max(0, p.flash - dt * 3);
     }
@@ -264,12 +288,15 @@
       } else {
         this.drawLiveBits();
       }
+      this.drawLive(0);
       this.drawMarbles(0);
       if (lvl[1].length) {
         this.drawTrack(lvl[1], 1);
         this.drawFeatures(1, false);
       }
+      this.drawLive(1);
       this.drawMarbles(1);
+      this.drawShots();
       this.drawParts();
       this.drawFeatures(-1, true);
       if (!this.lite) this.drawDecor(vy0, vy1, true);
@@ -282,6 +309,10 @@
         g.addColorStop(0, 'rgba(0,0,0,0)');
         g.addColorStop(1, 'rgba(10,0,30,' + 0.55 * this.slowmo + ')');
         ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      }
+      if (this.flash > 0.01) {
+        ctx.fillStyle = 'rgba(255,255,230,' + Math.min(0.75, this.flash) + ')';
+        ctx.fillRect(0, 0, w, h);
       }
       this.drawScreenParts();
     }
@@ -604,6 +635,25 @@
           ctx.strokeStyle = '#fff6c8'; ctx.lineWidth = 3;
           ctx.beginPath(); ctx.roundRect(l0, 0, l1 - l0, L, 12); ctx.stroke();
           ctx.restore();
+        } else if (f.type === 'brake') {
+          this.local(f.s + f.len, 0);
+          const L = f.len, l0 = f.l0, l1 = f.l1;
+          ctx.fillStyle = '#e03131';
+          ctx.beginPath(); ctx.roundRect(l0, 0, l1 - l0, L, 12); ctx.fill();
+          ctx.save();
+          ctx.beginPath(); ctx.roundRect(l0, 0, l1 - l0, L, 12); ctx.clip();
+          ctx.fillStyle = '#ffffff';
+          for (let y = 8; y < L; y += 22) ctx.fillRect(l0, y, l1 - l0, 9);
+          ctx.restore();
+          ctx.fillStyle = '#e03131';
+          const mid = (l0 + l1) / 2;
+          ctx.beginPath(); ctx.roundRect(mid - 30, L / 2 - 13, 60, 26, 8); ctx.fill();
+          ctx.fillStyle = '#fff'; ctx.font = '900 15px ' + FONT;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('СТОП', mid, L / 2 + 1);
+          ctx.strokeStyle = '#ffd8d8'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.roundRect(l0, 0, l1 - l0, L, 12); ctx.stroke();
+          ctx.restore();
         } else if (f.type === 'jump') {
           this.local(f.s + f.len, 0);
           const L = f.len;
@@ -729,6 +779,55 @@
       ctx.globalCompositeOperation = 'source-over';
     }
 
+    // Бонусные ячейки и бананы (живые, анимированные)
+    drawLive(level) {
+      const ctx = this.ctx, tr = this.tr, race = this.race, SP = FR.Sprites, t = this.time;
+      const vis = this.vis;
+      const visS = (s) => vis[Math.floor(tr.idx(s) / 24)] === 1;
+      const box = SP.itemBox();
+      for (const f of race.itemFeats) {
+        if (!visS(f.s) || (tr.eAt(f.s) > 0.5 ? 1 : 0) !== level) continue;
+        for (const b of f.boxes) {
+          const p = tr.pos(f.s, b.l, this.tmp);
+          const k = b.cd > 0 ? Math.max(0, 1 - b.cd / 0.4) : 1;
+          if (k <= 0) continue;
+          const bob = 1 + Math.sin(t * 4 + b.l) * 0.06;
+          const sz = 30 * k * bob;
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(Math.sin(t * 2 + b.l * 0.1) * 0.25);
+          ctx.globalAlpha = k;
+          ctx.drawImage(box, -sz / 2, -sz / 2, sz, sz);
+          ctx.restore();
+        }
+      }
+      ctx.globalAlpha = 1;
+      const ban = SP.emoji('🍌');
+      for (const hz of race.hazards) {
+        const p = tr.pos(hz.s, hz.l, this.tmp);
+        if ((p.e > 0.5 ? 1 : 0) !== level) continue;
+        if (p.x < this.view.x0 - 40 || p.x > this.view.x1 + 40 || p.y < this.view.y0 - 40 || p.y > this.view.y1 + 40) continue;
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.beginPath(); ctx.ellipse(p.x + 3, p.y + 5, 13, 8, 0, 0, TAU); ctx.fill();
+        ctx.drawImage(ban, p.x - 17, p.y - 17, 34, 34);
+      }
+    }
+
+    drawShots() {
+      const ctx = this.ctx, tr = this.tr, race = this.race;
+      const img = FR.Sprites.emoji('🚀');
+      for (const sh of race.shots) {
+        const p = tr.pos(sh.s, sh.l, this.tmp);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        // эмодзи ракеты смотрит вверх-вправо (45°) — поворачиваем по направлению трассы
+        ctx.rotate(p.h - Math.PI / 4);
+        ctx.drawImage(img, -20, -20, 40, 40);
+        ctx.restore();
+        if (Math.random() < 0.8) this.spark(p.x - Math.sin(p.h) * 18, p.y + Math.cos(p.h) * 18, Math.random() < 0.5 ? '#ffc53d' : '#ff6b1a', 50, 0.35);
+      }
+    }
+
     drawMarbles(level) {
       const ctx = this.ctx, race = this.race, SP = FR.Sprites;
       ctx.imageSmoothingEnabled = true;
@@ -764,6 +863,28 @@
         ctx.drawImage(f.ring, -r, -r, r * 2, r * 2);
         ctx.restore();
         ctx.drawImage(SP.shine, x - r, y - r, r * 2, r * 2);
+        if (m.shield > 0) {
+          const a = m.shield < 1.5 ? (Math.sin(this.time * 20) > 0 ? 0.9 : 0.3) : 0.9;
+          ctx.globalAlpha = a;
+          ctx.strokeStyle = '#7fd8ff'; ctx.lineWidth = 4;
+          ctx.fillStyle = 'rgba(127,216,255,0.18)';
+          ctx.beginPath(); ctx.arc(x, y, r + 7, 0, TAU); ctx.fill(); ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+        if (m.stun > 0) {
+          ctx.save();
+          ctx.translate(x, y - r - 4);
+          ctx.rotate(this.time * 6);
+          ctx.drawImage(SP.emoji('💫'), -14, -14, 28, 28);
+          ctx.restore();
+        }
+        if (m.magnet > 0) ctx.drawImage(SP.emoji('🧲'), x - r - 18, y - r - 6, 22, 22);
+        if (m.item) {
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(x + r + 4, y - r + 2, 13, 0, TAU); ctx.fill();
+          ctx.strokeStyle = this.faces[m.id].color; ctx.lineWidth = 3; ctx.stroke();
+          ctx.drawImage(SP.emoji(SP.ITEM_EMOJI[m.item]), x + r + 4 - 11, y - r + 2 - 11, 22, 22);
+        }
       }
     }
 

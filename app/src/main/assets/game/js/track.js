@@ -358,7 +358,7 @@
         const s = rng.range(s0, s1 - flen);
         if (type === 'jump' && maxK(s - 60, s + flen + 260) > 1 / 1400) continue;
         if (type === 'pegs' && maxK(s, s + flen) > 1 / 450) continue;
-        if (type !== 'boost' && !flatGround(s - 120, s + flen + 260)) continue;
+        if (type !== 'boost' && type !== 'brake' && !flatGround(s - 120, s + flen + 260)) continue;
         if (!isFree(s, s + flen, 240)) continue;
         busy.push([s, s + flen]);
         const f = { type, s, len: flen };
@@ -385,6 +385,23 @@
             }
           });
         }
+      }
+      // бонусные ячейки
+      for (let k = 0; k < (last ? 1 : 2); k++) {
+        place('items', 40, s0, last ? s1 - 300 : s1, (f) => {
+          const lanes = [-66, -22, 22, 66];
+          const skip = rng() < 0.5 ? rng.int(0, 3) : -1;
+          f.boxes = lanes.filter((_, q) => q !== skip).map((l) => ({ l, cd: 0 }));
+        });
+      }
+      // тормоза
+      for (let k = 0; k < (last ? 1 : 2); k++) {
+        place('brake', 80, s0, s1, (f) => {
+          const opt = rng.int(0, 2);
+          if (opt === 0) { f.l0 = -HALF + 10; f.l1 = 4; }
+          else if (opt === 1) { f.l0 = -4; f.l1 = HALF - 10; }
+          else { f.l0 = -HALF * 0.5; f.l1 = HALF * 0.5; }
+        });
       }
       for (let k = 0; k < (last ? 3 : 4); k++) {
         place('boost', 95, s0, s1, (f) => {

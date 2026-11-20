@@ -295,6 +295,17 @@
     peg: ['{n} задевает столбик!', 'Дзынь! {n} отскакивает!'],
     filler: ['Плотная борьба!', 'Все идут почти рядом!', 'Никто не хочет уступать!', 'Какая интрига!', 'Болельщики в восторге!', 'Расклад может поменяться в любой момент!'],
     last: ['{n} пока сзади, но всё ещё впереди!', '{n} готовит атаку из конца группы!'],
+    shoot: ['🚀 {n} стреляет ракетой в {t}!', '🚀 {n} запускает ракету! Цель — {t}!'],
+    hit: ['💥 Попадание! {n} теряет скорость!', '💥 Бах! {n} подбит!', '💥 Ракета догнала {n}!'],
+    block: ['🛡️ Щит спасает {n}!', '🛡️ {n} отбивается щитом!'],
+    slip: ['🍌 {n} поскальзывается на банане!', '🍌 Ой! {n} наехал на банан!'],
+    drop: ['🍌 {n} бросает банан на трассу!'],
+    shield: ['🛡️ {n} включает щит!'],
+    turbo: ['🔥 {n} включает турбо!', '🔥 Турбо для {n}!'],
+    magnet: ['🧲 {n} притягивается магнитом!'],
+    zap: ['⚡ {n} бьёт молнией по всем впереди!', '⚡ Молния от {n}! Все впереди замедляются!'],
+    brake: ['🛑 {n} попадает на тормоз!', '🛑 Тормоз! {n} сбрасывает скорость!'],
+    item: ['🎁 {n} берёт {i}!'],
     rescue: ['🚀 {n} получает ракету-догонялку!', '🚀 Ракета для {n}! Догоняем!', '🚀 {n} возвращается в гонку!'],
   };
   const pick = (arr) => arr[(Math.random() * arr.length) | 0];
@@ -326,7 +337,11 @@
     bannerT = setTimeout(() => b.classList.remove('show'), dur || 2200);
   }
   const nm = (id) => state.racers[id].name;
-  const fill = (s, e) => s.replace('{n}', e.id != null ? nm(e.id) : '').replace('{p}', e.prev != null ? nm(e.prev) : 'соперника');
+  const ITEM_NAME = { rocket: '🚀 ракету', banana: '🍌 банан', shield: '🛡️ щит', turbo: '🔥 турбо', magnet: '🧲 магнит', zap: '⚡ молнию' };
+  const fill = (s, e) => s.replace('{n}', e.id != null ? nm(e.id) : '')
+    .replace('{p}', e.prev != null ? nm(e.prev) : 'соперника')
+    .replace('{t}', e.target != null ? nm(e.target) : 'лидера')
+    .replace('{i}', e.item ? ITEM_NAME[e.item] : 'бонус');
 
   function commentEvent(e) {
     const race = state.race;
@@ -336,6 +351,17 @@
       case 'stumble': if (race.ranking[0] !== e.id) say(fill(pick(PH.stumble), e)); break;
       case 'boost': if (Math.random() < 0.18) say(fill(pick(PH.boost), e), { gap: 5000 }); break;
       case 'jump': if (Math.random() < 0.12) say(fill(pick(PH.jump), e), { gap: 5000 }); break;
+      case 'shoot': say(fill(pick(PH.shoot), e), { gap: 1500, speak: true }); break;
+      case 'hit': say(fill(pick(PH.hit), e), { force: true, speak: true }); break;
+      case 'block': say(fill(pick(PH.block), e), { gap: 1500 }); break;
+      case 'slip': say(fill(pick(PH.slip), e), { gap: 1500, speak: Math.random() < 0.5 }); break;
+      case 'drop': if (Math.random() < 0.4) say(fill(pick(PH.drop), e), { gap: 4000 }); break;
+      case 'shield': if (Math.random() < 0.4) say(fill(pick(PH.shield), e), { gap: 4000 }); break;
+      case 'turbo': if (Math.random() < 0.4) say(fill(pick(PH.turbo), e), { gap: 4000 }); break;
+      case 'magnet': if (Math.random() < 0.5) say(fill(pick(PH.magnet), e), { gap: 4000 }); break;
+      case 'zap': say(fill(pick(PH.zap), e), { force: true, speak: true }); break;
+      case 'brake': if (Math.random() < 0.25) say(fill(pick(PH.brake), e), { gap: 5000 }); break;
+      case 'item': if (Math.random() < 0.2) say(fill(pick(PH.item), e), { gap: 5000 }); break;
       case 'rescue': say(fill(pick(PH.rescue), e), { gap: 3500, speak: Math.random() < 0.3 }); break;
       case 'peg': if (Math.random() < 0.06) say(fill(pick(PH.peg), e), { gap: 6000 }); break;
       case 'section': {
@@ -465,7 +491,7 @@
       const el = document.createElement('div');
       el.className = 'st-item';
       el.style.setProperty('--sz', ih - 6 + 'px');
-      el.innerHTML = '<span class="rank"></span><div class="sav" style="--c:' + r.color + ';background-image:url(' + r.src + ')"></div>';
+      el.innerHTML = '<span class="rank"></span><div class="sav" style="--c:' + r.color + ';background-image:url(' + r.src + ')"></div><span class="sitem"></span>';
       box.appendChild(el);
       return el;
     });
@@ -492,6 +518,10 @@
       el.querySelector('.rank').textContent = r + 1;
       el.classList.toggle('first', r === 0);
       el.classList.toggle('fin', race.marbles[id].finished);
+      const mm = race.marbles[id];
+      const badge = mm.item ? FR.Sprites.ITEM_EMOJI[mm.item] : mm.shield > 0 ? '🛡️' : mm.stun > 0 ? '💫' : '';
+      const sb = el.querySelector('.sitem');
+      if (sb.textContent !== badge) sb.textContent = badge;
       el.style.zIndex = 100 - r;
     });
   }
@@ -507,6 +537,14 @@
         case 'peg': AU.peg(); break;
         case 'boost': AU.boost(); break;
         case 'rescue': AU.boost(); break;
+        case 'item': AU.ding(); break;
+        case 'shoot': AU.whoosh(); break;
+        case 'hit': AU.land(400); AU.rail(200); break;
+        case 'block': AU.peg(); break;
+        case 'slip': AU.jump(); break;
+        case 'turbo': AU.boost(); break;
+        case 'brake': AU.rail(120); break;
+        case 'zap': AU.zap(); break;
         case 'jump': AU.jump(); break;
         case 'land': AU.land(e.power); break;
       }

@@ -380,6 +380,40 @@
     SP.ready = true;
   };
 
+  // Эмодзи как картинка (рисуются один раз, дальше — быстрый drawImage)
+  const emojiCache = {};
+  SP.emoji = function (ch) {
+    if (emojiCache[ch]) return emojiCache[ch];
+    const c = canvas(96), ctx = c.getContext('2d');
+    ctx.font = '72px "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(ch, 48, 54);
+    return (emojiCache[ch] = c);
+  };
+  SP.ITEM_EMOJI = { rocket: '🚀', banana: '🍌', shield: '🛡️', turbo: '🔥', magnet: '🧲', zap: '⚡' };
+
+  // Бонусная ячейка «?»
+  SP.itemBox = function () {
+    if (SP._box) return SP._box;
+    const c = canvas(128), ctx = c.getContext('2d');
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.roundRect(22, 26, 96, 96, 22); ctx.fill();
+    const g = ctx.createLinearGradient(14, 14, 114, 114);
+    g.addColorStop(0, '#ff5fa2'); g.addColorStop(0.35, '#ffc53d'); g.addColorStop(0.65, '#3ccf6e'); g.addColorStop(1, '#3fa7ff');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.roundRect(14, 14, 100, 100, 22); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.roundRect(22, 20, 84, 36, 16); ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.roundRect(14, 14, 100, 100, 22); ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 72px system-ui, Roboto, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(60,20,120,0.6)';
+    ctx.strokeText('?', 64, 68); ctx.fillText('?', 64, 68);
+    return (SP._box = c);
+  };
+
   // Лицо игрока внутри шарика (256 px — чётко даже на плотных экранах)
   SP.face = function (img, color) {
     const c = canvas(256), ctx = c.getContext('2d');

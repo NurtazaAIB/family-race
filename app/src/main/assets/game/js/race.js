@@ -35,9 +35,16 @@
       this.vNom = 150;
       this.track = FR.buildTrack(rng, this.vNom * this.T);
       const tr = this.track;
+      // дальше — только «живой» криптослучай: исход заранее не определён
+      this.rng = FR.trueRng();
+      this.shots = [];
+      this.hazards = [];
+      this.itemFeats = tr.feats.filter((f) => f.type === 'items');
+      for (const f of this.itemFeats) for (const b of f.boxes) b.cd = 0;
 
       // ---- стартовая решётка: честное перемешивание ----
       const gridOrder = FR.secureShuffle(players.map((_, i) => i));
+      const rng2 = this.rng;
       const perRow = Math.min(4, N);
       this.marbles = players.map((p, i) => ({
         id: i, p, s: 0, l: 0, v: 0, vl: 0, z: 0, vz: 0,
@@ -46,6 +53,7 @@
         laneT: 0, laneTimer: rng.range(1, 3), ph1: rng() * 6.28, ph2: rng() * 6.28,
         wash: false, hitCd: 0, x: 0, y: 0, h: 0, e: 0,
         lostT: 0, rocket: false, rockets: 0,
+        item: null, itemT: 0, shield: 0, stun: 0, magnet: 0, ps: 0,
       }));
       gridOrder.forEach((id, r) => {
         const row = Math.floor(r / perRow), col = r % perRow;
@@ -84,6 +92,24 @@
         if (m.l >= f.l0 - 6 && m.l <= f.l1 + 6) {
           m.boost = 0.5 * this.v0;
           this.events.push({ type: 'boost', id: m.id });
+        }
+      } else if (f.type === 'brake') {
+        if (m.l >= f.l0 - 6 && m.l <= f.l1 + 6) {
+          if (m.shield > 0) { m.shield = 0; this.events.push({ type: 'block', id: m.id }); }
+          else {
+            m.boost = Math.min(m.boost, -0.5 * this.v0);
+            this.events.push({ type: 'brake', id: m.id });
+          }
+        }
+      } else if (f.type === 'items') {
+        if (m.item) return;
+        for (const b of f.boxes) {
+          if (b.cd > 0 || Math.abs(m.l - b.l) > R + 14) continue;
+          b.cd = 2.5;
+          m.item = this.pickItem(m);
+          m.itemT = this.rng.range(0.8, 2.2);
+          this.events.push({ type: 'item', id: m.id, item: m.item });
+          break;
         }
       } else if (f.type === 'jump') {
         m.pendingJump = f.s + f.len;
@@ -133,14 +159,31 @@
           vt = Math.max(0, v0 * 0.9 * (1 - past / 650));
         } else {
           const wob = 0.025 * Math.sin(t * 1.7 + m.ph1);
-          vt = v0 * tr.fAt(m.s) * ramp * (1 + m.form + wob) + m.boost + (m.rocket ? 1.1 * v0 : 0);
+          let mag = 0;
+          if (m.magnet > 0) {
+            for (const o of this.marbles) {
+              const ds = o.s - m.s;
+              if (o !== m && ds > 0 && ds < D * 7) { mag = 0.45 * v0; break; }
+            }
+          }
+          vt = v0 * tr.fAt(m.s) * ramp * (1 + m.form + wob) + m.boost + mag + (m.rocket ? 1.1 * v0 : 0);
+          if (m.stun > 0) vt *= 0.3;
+          else vt = Math.max(vt, 0.2 * v0);
         }
         const up = m.rocket ? 420 : 240, down = 380;
         m.v += FR.clamp(vt - m.v, -down * dt, up * dt);
         if (m.v < 0) m.v = 0;
+        m.ps = m.s;
         m.s += m.v * dt;
         m.boost *= Math.exp(-dt * 1.1);
-        m.spin += (m.v * dt) / R;
+        m.spin += (m.v * dt) / R + (m.stun > 0 ? dt * 14 : 0);
+        if (m.shield > 0) m.shield -= dt;
+        if (m.stun > 0) m.stun -= dt;
+        if (m.magnet > 0) m.magnet -= dt;
+        if (m.item && !m.finished) {
+          m.itemT -= dt;
+          if (m.itemT <= 0) this.useItem(m);
+        }
         if (m.hitCd > 0) m.hitCd -= dt;
 
         // боковое движение
@@ -206,6 +249,7 @@
 
       this.collide();
       this.pegs();
+      this.updateItems(dt);
 
       // финиш
       for (const m of this.marbles) {
@@ -263,6 +307,108 @@
       }
 
       this.allDone = this.finishCount === this.N;
+    }
+
+    // ---------- бонусы ----------
+    pickItem(m) {
+      const N = this.N;
+      const rank = this.ranking.indexOf(m.id);
+      const p = N > 1 ? rank / (N - 1) : 0;
+      let table;
+      if (rank === 0) table = [['shield', 35], ['banana', 40], ['turbo', 15], ['magnet', 10]];
+      else if (p < 0.7) table = [['rocket', 30], ['banana', 20], ['turbo', 25], ['shield', 10], ['magnet', 15]];
+      else table = [['rocket', 35], ['turbo', 28], ['magnet', 15], ['zap', 10], ['shield', 12]];
+      let sum = 0;
+      for (const t of table) sum += t[1];
+      let r = this.rng() * sum;
+      for (const t of table) { r -= t[1]; if (r <= 0) return t[0]; }
+      return table[0][0];
+    }
+
+    useItem(m) {
+      const it = m.item, v0 = this.v0;
+      m.item = null;
+      switch (it) {
+        case 'rocket': {
+          const rk = this.ranking.filter((id) => !this.marbles[id].finished);
+          const target = rk[0] === m.id ? rk[1] : rk[0];
+          if (target == null) { m.boost = 0.85 * v0; this.events.push({ type: 'turbo', id: m.id }); break; }
+          this.shots.push({ from: m.id, target, s: m.s + R, l: m.l, life: 12 });
+          this.events.push({ type: 'shoot', id: m.id, target });
+          break;
+        }
+        case 'banana':
+          this.hazards.push({ s: m.s - D * 1.3, l: m.l, owner: m.id, t: 0 });
+          this.events.push({ type: 'drop', id: m.id });
+          break;
+        case 'shield':
+          m.shield = 9;
+          this.events.push({ type: 'shield', id: m.id });
+          break;
+        case 'turbo':
+          m.boost = Math.max(m.boost, 0.85 * v0);
+          this.events.push({ type: 'turbo', id: m.id });
+          break;
+        case 'magnet':
+          m.magnet = 3.5;
+          this.events.push({ type: 'magnet', id: m.id });
+          break;
+        case 'zap': {
+          const hit = [];
+          for (const o of this.marbles) {
+            if (o === m || o.finished || o.s <= m.s) continue;
+            if (o.shield > 0) { o.shield = 0; this.events.push({ type: 'block', id: o.id }); }
+            else { o.stun = Math.max(o.stun, 0.8); hit.push(o.id); }
+          }
+          this.events.push({ type: 'zap', id: m.id, hit });
+          break;
+        }
+      }
+    }
+
+    hitMarble(o, power, by, kind) {
+      if (o.shield > 0) {
+        o.shield = 0;
+        this.events.push({ type: 'block', id: o.id });
+        return;
+      }
+      o.stun = Math.max(o.stun, power);
+      if (o.z <= 0.5) { o.vz = 170; o.z = 4; }
+      o.vl += (this.rng() < 0.5 ? -1 : 1) * 90;
+      this.events.push({ type: kind, id: o.id, by });
+    }
+
+    updateItems(dt) {
+      for (const f of this.itemFeats) for (const b of f.boxes) if (b.cd > 0) b.cd -= dt;
+      // ракеты
+      for (let i = this.shots.length - 1; i >= 0; i--) {
+        const sh = this.shots[i];
+        const tg = this.marbles[sh.target];
+        sh.life -= dt;
+        if (tg.finished || sh.life <= 0) { this.shots.splice(i, 1); continue; }
+        const sp = Math.max(2.4 * this.v0, tg.v + 140);
+        sh.s += sp * dt;
+        sh.l += FR.clamp(tg.l - sh.l, -260 * dt, 260 * dt);
+        if (sh.s >= tg.s - R) {
+          this.shots.splice(i, 1);
+          this.hitMarble(tg, 1.3, sh.from, 'hit');
+        }
+      }
+      // бананы
+      for (let i = this.hazards.length - 1; i >= 0; i--) {
+        const h = this.hazards[i];
+        h.t += dt;
+        if (h.t > 45) { this.hazards.splice(i, 1); continue; }
+        for (const m of this.marbles) {
+          if (m.finished || m.z > 15) continue;
+          if (m.id === h.owner && h.t < 1.5) continue;
+          if (m.ps < h.s && m.s >= h.s && Math.abs(m.l - h.l) < R + 10) {
+            this.hazards.splice(i, 1);
+            this.hitMarble(m, 0.9, h.owner, 'slip');
+            break;
+          }
+        }
+      }
     }
 
     wall(m) {
