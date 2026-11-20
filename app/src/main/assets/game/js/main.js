@@ -297,6 +297,7 @@
     last: ['{n} пока сзади, но всё ещё впереди!', '{n} готовит атаку из конца группы!'],
     shoot: ['🚀 {n} стреляет ракетой в {t}!', '🚀 {n} запускает ракету! Цель — {t}!'],
     hit: ['💥 Попадание! {n} теряет скорость!', '💥 Бах! {n} подбит!', '💥 Ракета догнала {n}!'],
+    bighit: ['💥 Мощный удар из конца гонки! {n} почти стоит!', '💥 Супер-ракета от аутсайдера! {n} надолго застрял!'],
     block: ['🛡️ Щит спасает {n}!', '🛡️ {n} отбивается щитом!'],
     slip: ['🍌 {n} поскальзывается на банане!', '🍌 Ой! {n} наехал на банан!'],
     drop: ['🍌 {n} бросает банан на трассу!'],
@@ -353,6 +354,7 @@
       case 'jump': if (Math.random() < 0.12) say(fill(pick(PH.jump), e), { gap: 5000 }); break;
       case 'shoot': say(fill(pick(PH.shoot), e), { gap: 1500, speak: true }); break;
       case 'hit': say(fill(pick(PH.hit), e), { force: true, speak: true }); break;
+      case 'bighit': say(fill(pick(PH.bighit), e), { force: true, speak: true }); break;
       case 'block': say(fill(pick(PH.block), e), { gap: 1500 }); break;
       case 'slip': say(fill(pick(PH.slip), e), { gap: 1500, speak: Math.random() < 0.5 }); break;
       case 'drop': if (Math.random() < 0.4) say(fill(pick(PH.drop), e), { gap: 4000 }); break;
@@ -540,6 +542,7 @@
         case 'item': AU.ding(); break;
         case 'shoot': AU.whoosh(); break;
         case 'hit': AU.land(400); AU.rail(200); break;
+        case 'bighit': AU.land(600); AU.rail(300); AU.zap(); break;
         case 'block': AU.peg(); break;
         case 'slip': AU.jump(); break;
         case 'turbo': AU.boost(); break;

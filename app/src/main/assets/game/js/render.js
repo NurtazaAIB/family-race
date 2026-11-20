@@ -122,8 +122,8 @@
         case 'rail':
           for (let i = 0; i < 4; i++) this.spark(m.x, m.y, th.railHi, 90, 0.3);
           break;
-        case 'hit':
-          for (let i = 0; i < 18; i++) this.spark(m.x, m.y, ['#fff3b0', '#ff6b1a', '#ff3b3b'][i % 3], 200, 0.6);
+        case 'hit': case 'bighit':
+          for (let i = 0; i < (e.type === 'bighit' ? 34 : 18); i++) this.spark(m.x, m.y, ['#fff3b0', '#ff6b1a', '#ff3b3b'][i % 3], 200, 0.6);
           this.flash = Math.max(this.flash || 0, 0.15);
           break;
         case 'slip':

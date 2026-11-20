@@ -141,7 +141,7 @@
           const gap = leadS - m.s;
           if (m.rocket) {
             if (gap < RESCUE_UNTIL) m.rocket = false;
-          } else if (gap > LOST && t > 6) {
+          } else if (gap > LOST && t > 6 && m.stun <= 0) {
             m.lostT += dt;
             if (m.lostT > RESCUE_DELAY) {
               m.rocket = true;
@@ -167,7 +167,7 @@
             }
           }
           vt = v0 * tr.fAt(m.s) * ramp * (1 + m.form + wob) + m.boost + mag + (m.rocket ? 1.1 * v0 : 0);
-          if (m.stun > 0) vt *= 0.3;
+          if (m.stun > 0) vt *= m.stunK || 0.3;
           else vt = Math.max(vt, 0.2 * v0);
         }
         const up = m.rocket ? 420 : 240, down = 380;
@@ -178,7 +178,7 @@
         m.boost *= Math.exp(-dt * 1.1);
         m.spin += (m.v * dt) / R + (m.stun > 0 ? dt * 14 : 0);
         if (m.shield > 0) m.shield -= dt;
-        if (m.stun > 0) m.stun -= dt;
+        if (m.stun > 0) { m.stun -= dt; if (m.stun <= 0) m.stunK = 0.3; }
         if (m.magnet > 0) m.magnet -= dt;
         if (m.item && !m.finished) {
           m.itemT -= dt;
@@ -333,7 +333,10 @@
           const rk = this.ranking.filter((id) => !this.marbles[id].finished);
           const target = rk[0] === m.id ? rk[1] : rk[0];
           if (target == null) { m.boost = 0.85 * v0; this.events.push({ type: 'turbo', id: m.id }); break; }
-          this.shots.push({ from: m.id, target, s: m.s + R, l: m.l, life: 12 });
+          // чем дальше позади стрелок, тем сильнее ракета
+          const pos = rk.indexOf(m.id);
+          const p = rk.length > 1 ? pos / (rk.length - 1) : 0;
+          this.shots.push({ from: m.id, target, s: m.s + R, l: m.l, life: 14, power: 1.3 + 2.2 * p, big: p >= 0.6 });
           this.events.push({ type: 'shoot', id: m.id, target });
           break;
         }
@@ -366,13 +369,15 @@
       }
     }
 
-    hitMarble(o, power, by, kind) {
+    hitMarble(o, power, by, kind, slow) {
       if (o.shield > 0) {
         o.shield = 0;
         this.events.push({ type: 'block', id: o.id });
         return;
       }
       o.stun = Math.max(o.stun, power);
+      o.stunK = slow || 0.3;
+      if (kind === 'bighit') { o.boost = Math.min(o.boost, -0.4 * this.v0); o.v *= 0.4; }
       if (o.z <= 0.5) { o.vz = 170; o.z = 4; }
       o.vl += (this.rng() < 0.5 ? -1 : 1) * 90;
       this.events.push({ type: kind, id: o.id, by });
@@ -391,7 +396,7 @@
         sh.l += FR.clamp(tg.l - sh.l, -260 * dt, 260 * dt);
         if (sh.s >= tg.s - R) {
           this.shots.splice(i, 1);
-          this.hitMarble(tg, 1.3, sh.from, 'hit');
+          this.hitMarble(tg, sh.power || 1.3, sh.from, sh.big ? 'bighit' : 'hit', sh.big ? 0.1 : 0.3);
         }
       }
       // бананы
