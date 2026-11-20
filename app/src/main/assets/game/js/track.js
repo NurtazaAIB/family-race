@@ -300,15 +300,15 @@
     const p = {};
     const edge = HALF + RAIL;
     // объекты
-    for (let s = 0; s < track.total; s += rng.range(26, 54)) {
+    for (let s = 0; s < track.total; s += rng.range(16, 34)) {
       const i = track.idx(s);
       const theme = FR.THEMES[TH[i]];
       for (const side of [-1, 1]) {
-        if (rng() < 0.18) continue;
+        if (rng() < 0.12) continue;
         const type = pickWeighted(rng, theme.decor);
         const sz = DECOR_SIZE[type];
         const size = rng.range(sz[0], sz[1]);
-        const dist = edge + 10 + size * 0.9 + Math.pow(rng(), 1.5) * 720;
+        const dist = edge + 8 + size * 0.9 + Math.pow(rng(), 2.2) * 620;
         track.pos(s, side * dist, p);
         if (distToTrack(track, p.x, p.y, i) < edge + size * 0.95) continue;
         decor.push({ x: p.x, y: p.y, type, size, v: rng.int(0, 3), th: TH[i] });

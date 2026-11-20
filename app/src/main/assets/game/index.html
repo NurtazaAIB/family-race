@@ -1,1 +1,100 @@
-<!doctype html><meta charset="utf-8"><body style="background:#2b1e5c;color:#fff;font:24px sans-serif;display:grid;place-items:center;height:100vh">Скоро здесь будет гонка 🏁</body>
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Семейная Гонка</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- ============ МЕНЮ ============ -->
+  <section id="menu" class="screen active">
+    <div class="sky">
+      <div class="bubble b1"></div><div class="bubble b2"></div><div class="bubble b3"></div>
+      <div class="bubble b4"></div><div class="bubble b5"></div><div class="bubble b6"></div>
+    </div>
+    <div class="menu-inner">
+      <header class="logo">
+        <div class="logo-balls"><i class="lb r"></i><i class="lb y"></i><i class="lb b"></i></div>
+        <h1><span class="l1">Семейная</span><span class="l2">Гонка</span></h1>
+        <div class="flag-strip"></div>
+      </header>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Участники <span id="pcount" class="pill"></span></h2>
+          <button id="btnRefresh" class="icon-btn" title="Обновить">⟳</button>
+        </div>
+        <div id="playerGrid" class="player-grid"></div>
+        <div id="accessNote" class="note hidden">
+          Нет доступа ко всем фото. <button id="btnAccess" class="link-btn">Разрешить</button>
+        </div>
+        <button id="btnAdd" class="btn secondary">＋ Добавить игрока</button>
+        <p class="hint">Или положите фото в папку <b>Pictures/FamilyRace</b> — имя файла станет именем игрока. Нажмите на игрока, чтобы включить или выключить его. Удерживайте, чтобы удалить.</p>
+      </div>
+
+      <button id="btnStart" class="btn primary big"><span>🏁 Старт!</span></button>
+      <div class="menu-row">
+        <button id="btnStats" class="btn ghost">🏆 Победы</button>
+        <button id="btnSettings" class="btn ghost">⚙️ Настройки</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HUD ============ -->
+  <section id="hud" class="screen">
+    <div class="hud-top">
+      <div class="chip timer"><span class="dot"></span><span id="hudTime">0:00</span></div>
+      <div class="stage">
+        <div class="stage-name" id="hudStage">🌻 Солнечная долина</div>
+        <div class="progress"><div class="bar" id="hudBar"></div><div class="tip" id="hudTip"></div><div class="flag">🏁</div></div>
+      </div>
+      <button id="btnPause" class="icon-btn round">❚❚</button>
+    </div>
+    <div id="standings" class="standings"></div>
+    <div id="comment" class="comment"><span class="mic">🎙️</span><span id="commentText"></span></div>
+    <div id="banner" class="banner"></div>
+    <div id="slowmo" class="slowmo">ФОТОФИНИШ</div>
+  </section>
+
+  <!-- ============ ОТСЧЁТ ============ -->
+  <section id="countdown" class="screen overlay-clear">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div id="cdText" class="cd-text"></div>
+  </section>
+
+  <!-- ============ РЕЗУЛЬТАТЫ ============ -->
+  <section id="results" class="screen">
+    <div class="results-inner">
+      <h2 class="res-title">🏆 Победитель!</h2>
+      <div id="winnerName" class="winner-name"></div>
+      <div class="podium">
+        <div class="pod p2"><div class="pav"></div><div class="pname"></div><div class="block"><span>2</span></div></div>
+        <div class="pod p1"><div class="crown">👑</div><div class="pav"></div><div class="pname"></div><div class="block"><span>1</span></div></div>
+        <div class="pod p3"><div class="pav"></div><div class="pname"></div><div class="block"><span>3</span></div></div>
+      </div>
+      <div id="resList" class="res-list"></div>
+      <div class="menu-row">
+        <button id="btnAgain" class="btn primary">🔁 Ещё заезд!</button>
+      </div>
+      <button id="btnToMenu" class="btn ghost wide">В меню</button>
+    </div>
+  </section>
+
+  <!-- ============ МОДАЛКИ ============ -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card" id="modalCard"></div>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script src="js/util.js"></script>
+  <script src="js/track.js"></script>
+  <script src="js/race.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
