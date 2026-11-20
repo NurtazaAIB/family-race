@@ -2,6 +2,9 @@ package kz.family.race
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.UiModeManager
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.app.RecoverableSecurityException
 import android.content.Context
 import android.content.pm.PackageManager
@@ -68,6 +71,9 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Телевизор — горизонтально, телефон — вертикально
+        requestedOrientation = if (isTv()) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
@@ -111,6 +117,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         })
+    }
+
+    private fun isTv(): Boolean {
+        val ui = (getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)?.currentModeType
+        return ui == Configuration.UI_MODE_TYPE_TELEVISION ||
+            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
     }
 
     private fun hideSystemBars() {
@@ -219,6 +231,9 @@ class MainActivity : ComponentActivity() {
     inner class Bridge {
         @JavascriptInterface
         fun isAndroid(): Boolean = true
+
+        @JavascriptInterface
+        fun isTv(): Boolean = this@MainActivity.isTv()
 
         @JavascriptInterface
         fun requestPlayers() {

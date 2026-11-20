@@ -41,8 +41,16 @@
     $('modalCard').innerHTML = html;
     $('modal').classList.remove('hidden');
     if (onMount) onMount($('modalCard'));
+    setTimeout(() => {
+      const f = $('modalCard').querySelector('input, .btn.primary, .btn.secondary, .btn');
+      if (f) f.focus();
+    }, 60);
   }
-  function closeModal() { $('modal').classList.add('hidden'); }
+  function closeModal() {
+    $('modal').classList.add('hidden');
+    const t = state && state.mode === 'menu' ? $('btnStart') : state && state.mode === 'results' ? $('btnAgain') : null;
+    if (t) setTimeout(() => t.focus(), 60);
+  }
   $('modal').addEventListener('click', (e) => {
     if (e.target === $('modal') && !state.paused) closeModal();
   });
@@ -114,6 +122,11 @@
     for (const p of players) {
       const el = document.createElement('div');
       el.className = 'ptile' + (disabled.has(p.name) ? ' off' : '');
+      el.tabIndex = 0;
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.keyCode === 23) { e.preventDefault(); el.click(); }
+        if (e.key === 'ContextMenu' || e.keyCode === 82) { e.preventDefault(); askDelete(p); }
+      });
       el.innerHTML = '<div class="av" style="--c:' + p.color + ';background-image:url(' + p.src + ')"></div>' +
         '<div class="nm">' + esc(p.name) + '</div><div class="chk">' + (disabled.has(p.name) ? '' : '✓') + '</div>';
       let pressT = 0, long = false;
@@ -279,6 +292,7 @@
     peg: ['{n} задевает столбик!', 'Дзынь! {n} отскакивает!'],
     filler: ['Плотная борьба!', 'Все идут почти рядом!', 'Никто не хочет уступать!', 'Какая интрига!', 'Болельщики в восторге!', 'Расклад может поменяться в любой момент!'],
     last: ['{n} пока сзади, но всё ещё впереди!', '{n} готовит атаку из конца группы!'],
+    rescue: ['🚀 {n} получает ракету-догонялку!', '🚀 Ракета для {n}! Догоняем!', '🚀 {n} возвращается в гонку!'],
   };
   const pick = (arr) => arr[(Math.random() * arr.length) | 0];
   let cmT = 0, lastSay = 0, lastSpeak = 0;
@@ -319,6 +333,7 @@
       case 'stumble': if (race.ranking[0] !== e.id) say(fill(pick(PH.stumble), e)); break;
       case 'boost': if (Math.random() < 0.18) say(fill(pick(PH.boost), e), { gap: 5000 }); break;
       case 'jump': if (Math.random() < 0.12) say(fill(pick(PH.jump), e), { gap: 5000 }); break;
+      case 'rescue': say(fill(pick(PH.rescue), e), { gap: 3500, speak: Math.random() < 0.3 }); break;
       case 'peg': if (Math.random() < 0.06) say(fill(pick(PH.peg), e), { gap: 6000 }); break;
       case 'section': {
         const th = FR.THEMES[e.theme];
@@ -467,6 +482,7 @@
         case 'rail': AU.rail(e.power); break;
         case 'peg': AU.peg(); break;
         case 'boost': AU.boost(); break;
+        case 'rescue': AU.boost(); break;
         case 'jump': AU.jump(); break;
         case 'land': AU.land(e.power); break;
       }
@@ -483,7 +499,7 @@
     if (race.winnerDone && state.slowHold < 1.5) { want = 0.28; state.slowHold += realDt; }
     state.ts += (want - state.ts) * (1 - Math.exp(-realDt * 6));
     renderer.slowmo = FR.clamp((1 - state.ts) / 0.72, 0, 1);
-    $('slowmo').classList.toggle('show', renderer.slowmo > 0.5 && race.photoFinish && !race.winnerDone);
+    $('slowmo').classList.toggle('show', renderer.slowmo > 0.5 && race.closeFinish && !race.winnerDone);
     if (renderer.slowmo > 0.3 && !race.winnerDone) {
       const p = tr.pos(tr.finish - 20, 0, {});
       renderer.focus = { x: p.x, y: p.y + 40, z: 1.45 };
@@ -524,7 +540,7 @@
 
     if (race.winnerDone) {
       state.endTimer += realDt;
-      if (state.endTimer > 4.2 && !state.winnerShown) showResults();
+      if ((state.endTimer > 4.2 && race.allDone) || state.endTimer > 9) { if (!state.winnerShown) showResults(); }
     }
     return sim;
   }
@@ -567,6 +583,7 @@
     });
     $('resList').innerHTML = html;
     show('results');
+    setTimeout(() => $('btnAgain').focus(), 300);
     renderer.celebrating = true;
     renderer.burstScreen(90);
     AU.fanfare();
@@ -583,6 +600,7 @@
     if (AND) AND.stopSpeak();
     show('menu');
     requestPlayers();
+    setTimeout(() => $('btnStart').focus(), 200);
   }
 
   function pause() {
@@ -659,7 +677,17 @@
 
   // ---------------- старт ----------------
   FR.Sprites.build();
+  if (AND && AND.isTv && AND.isTv()) document.body.classList.add('tv');
   requestPlayers();
+  setTimeout(() => $('btnStart').focus(), 400);
+  // Пульт: «ОК» в паузе/модалке, кнопка меню на пульте = пауза
+  document.addEventListener('keydown', (e) => {
+    if ((e.keyCode === 82 || e.key === 'ContextMenu' || e.key === 'MediaPlayPause' || e.keyCode === 85) &&
+        (state.mode === 'race' || state.mode === 'countdown')) {
+      e.preventDefault();
+      if (state.paused) resume(); else pause();
+    }
+  });
   requestAnimationFrame(frame);
 
   // Режимы для проверки в браузере: ?auto=1&seek=300&warp=10

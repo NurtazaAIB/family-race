@@ -22,12 +22,13 @@
     }
 
     resize() {
-      this.dpr = Math.min(2, G.devicePixelRatio || 1);
+      this.dpr = Math.min(3, G.devicePixelRatio || 1);
       this.w = G.innerWidth;
       this.h = G.innerHeight;
       this.cv.width = Math.round(this.w * this.dpr);
       this.cv.height = Math.round(this.h * this.dpr);
-      this.baseZ = Math.min(this.w * 0.6, 420) / (FR.TRACK_W + RAIL * 2);
+      this.landscape = this.w > this.h;
+      this.baseZ = Math.min(this.w * 0.6, this.h * 0.45, 420) / (FR.TRACK_W + RAIL * 2);
     }
 
     setRace(race, faces) {
@@ -39,7 +40,8 @@
       this.screenParts.length = 0;
       this.celebrating = false;
       this.trails = race.marbles.map(() => []);
-      const p = this.tr.pos(race.sc - 40, 0, {});
+      const s0 = race.marbles.reduce((a, m) => a + m.s, 0) / race.marbles.length;
+      const p = this.tr.pos(s0 - 40, 0, {});
       this.cam.x = p.x; this.cam.y = p.y; this.cam.z = this.baseZ * 1.25;
     }
 
@@ -48,9 +50,11 @@
       const race = this.race, tr = this.tr, cam = this.cam;
       let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
       let lead = null;
+      const leadS = race.marbles[race.ranking[0]].s;
       for (const m of race.marbles) {
         tr.pos(m.s, m.l, m);
         if (m.finished && m.s > tr.finish + 300) continue;
+        if (!m.finished && leadS - m.s > FR.LOST_DIST) continue;
         if (m.x < minX) minX = m.x; if (m.x > maxX) maxX = m.x;
         if (m.y < minY) minY = m.y; if (m.y > maxY) maxY = m.y;
       }
@@ -61,9 +65,9 @@
       if (minX > maxX) { minX = maxX = lead.x; minY = maxY = lead.y; }
 
       let tx = (minX + maxX) / 2, ty = (minY + maxY) / 2;
-      const bw = maxX - minX + D * 4, bh = maxY - minY + D * 6;
-      let tz = Math.min((this.w - 90) / bw, (this.h - 230) / bh);
-      tz = FR.clamp(tz, this.baseZ * 0.82, this.baseZ * 1.3);
+      const bw = maxX - minX + D * 5, bh = maxY - minY + D * 7;
+      let tz = Math.min((this.w - (this.landscape ? 200 : 90)) / bw, (this.h - (this.landscape ? 130 : 230)) / bh);
+      tz = FR.clamp(tz, this.baseZ * 0.72, this.baseZ * 1.25);
       if (this.focus) {
         tx = this.focus.x; ty = this.focus.y - 30;
         tz = this.baseZ * this.focus.z;
@@ -178,8 +182,16 @@
             color: th.ice ? '#ffffff' : '#d8b98a', kind: 'dust',
           });
         }
+        if (m.rocket && Math.random() < dt * 40) {
+          const b = this.tr.pos(m.s - R * 1.1, m.l + (Math.random() - 0.5) * 10, {});
+          this.parts.push({
+            x: b.x, y: b.y, vx: (Math.random() - 0.5) * 40, vy: (Math.random() - 0.5) * 40,
+            life: 0.45, max: 0.45, size: 5 + Math.random() * 4,
+            color: ['#fff3b0', '#ffc53d', '#ff7a1a', '#ff3b3b'][(Math.random() * 4) | 0], kind: 'spark',
+          });
+        }
         const tr = this.trails[m.id];
-        if (m.boost > 18) {
+        if (m.boost > 18 || m.rocket) {
           tr.push({ x: m.x, y: m.y });
           if (tr.length > 10) tr.shift();
         } else if (tr.length) tr.shift();
@@ -215,14 +227,14 @@
       const w = this.w, h = this.h, z = cam.z;
       const cx = w / 2 + 22, cy = h / 2 + 18;
 
-      // фон с плавной сменой этапов
-      const ci = this.idxForY(cam.y);
-      const s = ci * STEP;
-      let ground = FR.THEMES[tr.TH[ci]].ground;
+      // фон с плавной сменой этапов (по положению лидера)
+      const race = this.race;
+      const ls = race.marbles[race.ranking[0]].s;
+      let ground = FR.THEMES[tr.themeAt(ls)].ground;
       for (let j = 1; j < tr.sections.length; j++) {
         const b = tr.sections[j];
-        if (Math.abs(s - b) < 600) {
-          ground = FR.mixColor(FR.THEMES[j - 1].ground, FR.THEMES[j].ground, FR.smooth((s - b + 600) / 1200));
+        if (Math.abs(ls - b) < 600) {
+          ground = FR.mixColor(FR.THEMES[j - 1].ground, FR.THEMES[j].ground, FR.smooth((ls - b + 600) / 1200));
         }
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -234,16 +246,42 @@
       const vy0 = cam.y - cy / z, vy1 = cam.y + (h - cy) / z;
       this.view = { x0: vx0, x1: vx1, y0: vy0, y1: vy1 };
 
-      const i0 = Math.max(0, this.idxForY(vy1 + 420) - 2);
-      const i1 = Math.min(tr.n - 1, this.idxForY(vy0 - 420) + 2);
+      // видимые участки трассы, разделённые по уровням (земля / мост)
+      const blocks = tr.blocks;
+      if (!this.vis || this.vis.length !== blocks.length) this.vis = new Uint8Array(blocks.length);
+      const vis = this.vis;
+      const runs = [];
+      for (let q = 0; q < blocks.length; q++) {
+        const B = blocks[q];
+        const on = B.x1 > vx0 && B.x0 < vx1 && B.y1 > vy0 && B.y0 < vy1;
+        vis[q] = on ? 1 : 0;
+        if (!on) continue;
+        const last = runs[runs.length - 1];
+        if (last && last[1] >= B.a) last[1] = B.b; else runs.push([B.a, B.b]);
+      }
+      const E = tr.E;
+      const lvl = [[], []];
+      for (const [a, b] of runs) {
+        let st = a, cur = E[a] > 0.5 ? 1 : 0;
+        for (let i = a + 1; i <= b; i++) {
+          const l = E[i] > 0.5 ? 1 : 0;
+          if (l !== cur) { lvl[cur].push([st, i]); st = i; cur = l; }
+        }
+        lvl[cur].push([st, b]);
+      }
 
       this.drawPatches(vy0, vy1);
-      this.drawTrack(i0, i1);
-      this.drawFeatures(i0, i1, false);
       this.drawDecor(vy0, vy1, false);
-      this.drawMarbles();
+      this.drawTrack(lvl[0], 0);
+      this.drawFeatures(0, false);
+      this.drawMarbles(0);
+      if (lvl[1].length) {
+        this.drawTrack(lvl[1], 1);
+        this.drawFeatures(1, false);
+      }
+      this.drawMarbles(1);
       this.drawParts();
-      this.drawFeatures(i0, i1, true);
+      this.drawFeatures(-1, true);
       this.drawDecor(vy0, vy1, true);
 
       // экранный слой
@@ -297,18 +335,28 @@
       }
     }
 
-    drawTrack(i0, i1) {
+    drawTrack(ranges, level) {
+      const ctx = this.ctx;
+      const OUT = HALF + RAIL;
+      const st = 2;
+      // тени
+      ctx.save();
+      if (level) { ctx.translate(20, 28); ctx.fillStyle = 'rgba(0,0,0,0.3)'; }
+      else { ctx.translate(7, 10); ctx.fillStyle = 'rgba(0,0,0,0.2)'; }
+      for (const [a, b] of ranges) { this.path(a, b, OUT + (level ? 4 : 0), st, true); ctx.fill(); }
+      ctx.restore();
+      if (level) {
+        // опоры и край моста
+        ctx.fillStyle = '#3a3150';
+        for (const [a, b] of ranges) { this.path(a, b, OUT + 5, st, true); ctx.fill(); }
+      }
+      for (const [a, b] of ranges) this.drawTrackBody(a, b);
+    }
+
+    drawTrackBody(i0, i1) {
       const ctx = this.ctx, tr = this.tr;
       const st = 2;
       const OUT = HALF + RAIL;
-      // тень
-      ctx.save();
-      ctx.translate(7, 10);
-      ctx.fillStyle = 'rgba(0,0,0,0.2)';
-      this.path(i0, i1, OUT, st, true);
-      ctx.fill();
-      ctx.restore();
-
       for (const ch of tr.chunks) {
         const a = Math.max(i0, ch.a), b = Math.min(i1, ch.b + 1);
         if (b <= a) continue;
@@ -416,15 +464,17 @@
       ctx.globalAlpha = 1;
     }
 
-    drawFeatures(i0, i1, overhead) {
+    drawFeatures(level, overhead) {
       const ctx = this.ctx, tr = this.tr, t = this.time;
-      const s0 = i0 * STEP - 200, s1 = i1 * STEP + 200;
+      const visS = (s) => this.vis[Math.floor(tr.idx(s) / 24)] === 1 || this.vis[Math.max(0, Math.floor(tr.idx(s) / 24) - 1)] === 1;
+      const lv = (s) => (tr.eAt(s) > 0.5 ? 1 : 0);
       if (!overhead) {
-        if (FR.START > s0 && FR.START < s1) this.checker(FR.START, 2, 0.9);
-        if (tr.finish > s0 && tr.finish < s1) this.checker(tr.finish - (HALF * 2) / 12 * 1.5, 3, 1);
+        if (visS(FR.START) && lv(FR.START) === level) this.checker(FR.START, 2, 0.9);
+        if (visS(tr.finish) && lv(tr.finish) === level) this.checker(tr.finish - (HALF * 2) / 12 * 1.5, 3, 1);
       }
       for (const f of tr.feats) {
-        if (f.s + f.len < s0 || f.s > s1) continue;
+        if (!visS(f.s) && !visS(f.s + f.len)) continue;
+        if (!overhead && lv(f.s) !== level) continue;
         if (overhead) {
           if (f.type === 'gate') this.gate(f.s, FR.THEMES[f.theme]);
           continue;
@@ -496,8 +546,8 @@
         }
       }
       if (overhead) {
-        if (FR.START > s0 && FR.START < s1) this.arch(FR.START - 10, 'СТАРТ', '#3fa7ff', false);
-        if (tr.finish > s0 && tr.finish < s1) this.arch(tr.finish, 'ФИНИШ', '#ff4d6d', true);
+        if (visS(FR.START)) this.arch(FR.START - 10, 'СТАРТ', '#3fa7ff', false);
+        if (visS(tr.finish)) this.arch(tr.finish, 'ФИНИШ', '#ff4d6d', true);
       }
     }
 
@@ -577,9 +627,11 @@
       ctx.globalCompositeOperation = 'source-over';
     }
 
-    drawMarbles() {
+    drawMarbles(level) {
       const ctx = this.ctx, race = this.race, SP = FR.Sprites;
-      const list = race.marbles.slice().sort((a, b) => a.z - b.z || b.y - a.y);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      const list = race.marbles.filter((m) => (m.e > 0.5 ? 1 : 0) === level).sort((a, b) => a.z - b.z || b.y - a.y);
       // шлейфы
       for (const m of list) {
         const tr = this.trails[m.id];
@@ -596,8 +648,7 @@
       for (const m of list) {
         const f = this.faces[m.id];
         let x = m.x, y = m.y;
-        if (m.wash && m.z === 0) { x += (Math.random() - 0.5) * 2.5; y += (Math.random() - 0.5) * 2.5; }
-        const sc = 1 + m.z * 0.008;
+        const sc = 1 + m.z * 0.008 + m.e * 0.12;
         const r = R * sc;
         // тень
         ctx.fillStyle = 'rgba(0,0,0,' + (0.3 - Math.min(0.15, m.z * 0.002)) + ')';
@@ -607,7 +658,7 @@
         ctx.drawImage(f.face, x - r, y - r, r * 2, r * 2);
         ctx.save();
         ctx.translate(x, y);
-        ctx.rotate(m.spin * 0.6);
+        ctx.rotate(m.spin * 0.12);
         ctx.drawImage(f.ring, -r, -r, r * 2, r * 2);
         ctx.restore();
         ctx.drawImage(SP.shine, x - r, y - r, r * 2, r * 2);
@@ -646,7 +697,10 @@
       const showNames = z > this.baseZ * 0.7 || race.N <= 6;
       for (const m of race.marbles) {
         const sx = cx + (m.x - cam.x) * z, sy = cy + (m.y - cam.y) * z;
-        if (sx < -60 || sx > this.w + 60 || sy < -60 || sy > this.h + 60) continue;
+        if (sx < -10 || sx > this.w + 10 || sy < -10 || sy > this.h + 10) {
+          if (!m.finished) this.offscreen(m, sx, sy, cx, cy);
+          continue;
+        }
         const r = R * (1 + m.z * 0.008) * z;
         const f = this.faces[m.id];
         if (showNames) {
@@ -665,6 +719,34 @@
           ctx.font = '800 12px ' + FONT;
         }
       }
+    }
+
+    offscreen(m, sx, sy, cx, cy) {
+      // аватар у края экрана со стрелкой в сторону шарика
+      const ctx = this.ctx, f = this.faces[m.id];
+      const dx = sx - cx, dy = sy - cy;
+      const mx = this.w / 2 - 34, myTop = cy - 110, myBot = this.h - cy - 90;
+      let k = Math.min(Math.abs(mx / (dx || 1e-6)), dy < 0 ? Math.abs(myTop / dy) : Math.abs(myBot / (dy || 1e-6)));
+      k = Math.min(k, 1);
+      const px = cx + dx * k, py = cy + dy * k;
+      const a = Math.atan2(dy, dx);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = f.color;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 30, Math.sin(a) * 30);
+      ctx.lineTo(Math.cos(a + 0.5) * 18, Math.sin(a + 0.5) * 18);
+      ctx.lineTo(Math.cos(a - 0.5) * 18, Math.sin(a - 0.5) * 18);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, 19, 0, TAU); ctx.fill();
+      ctx.drawImage(f.face, -16, -16, 32, 32);
+      if (m.rocket) {
+        ctx.font = '16px ' + EMOJI; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('🚀', 16, 14);
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
     }
 
     drawScreenParts() {

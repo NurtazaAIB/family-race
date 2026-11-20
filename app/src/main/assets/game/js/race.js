@@ -1,52 +1,51 @@
 /* Семейная Гонка — симуляция заезда
  *
- * Принцип честности: порядок финиша выбирается в самом начале
- * криптостойким перемешиванием (у каждого равные шансы), и никто,
- * включая владельца телефона, его не знает. Всю гонку «режиссёр»
- * держит шарики плотной группой и устраивает обгоны, а в последние
- * ~40 секунд группа плавно выстраивается в выбранный порядок.
+ * Шарики едут свободно: у каждого своя «форма», которая случайно
+ * меняется по ходу гонки, плюс ускорители, столбики, трамплины и
+ * столкновения. Правила для всех одинаковые, стартовая решётка
+ * перемешивается криптослучайно, поэтому шансы на победу равные.
+ *
+ * Если шарик отстал и пропал из кадра дольше 2 секунд,
+ * он получает «ракету-догонялку» и возвращается к группе.
  */
 (function (G) {
   'use strict';
   const FR = G.FR;
   const D = FR.D, R = FR.R, HALF = FR.TRACK_W / 2;
   const LIM = HALF - R - 3;
+  const LOST = (FR.LOST_DIST = 470);   // отставание, при котором шарик пропадает из кадра
+  const RESCUE_DELAY = 2.0;            // через сколько секунд дать ракету
+  const RESCUE_UNTIL = 170;            // ракета работает, пока не догонит до этого отставания
+
+  function gauss(rng) {
+    let u = 0, v = 0;
+    while (u === 0) u = rng();
+    v = rng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.283185307 * v);
+  }
 
   class Race {
     constructor(players, opt) {
       opt = opt || {};
       this.players = players;
       const N = (this.N = players.length);
-      this.T = opt.duration || 300 + FR.secureInt(46); // 5:00 … 5:45 до финиша победителя
+      this.T = opt.duration || 300 + FR.secureInt(46);
       this.rng = FR.makeRng(opt.seed != null ? opt.seed : FR.secureU32());
       const rng = this.rng;
       this.vNom = 150;
       this.track = FR.buildTrack(rng, this.vNom * this.T);
       const tr = this.track;
 
-      // ---- честный выбор итогового порядка ----
-      this.finalOrder = FR.secureShuffle(players.map((_, i) => i));
-      this.winner = this.finalOrder[0];
-      this.photoFinish = rng() < 0.45;
-      this.photoGap = this.photoFinish ? rng.range(0.12, 0.3) * D : rng.range(0.55, 1.1) * D;
-      this.tw = rng.range(1.2, 7);
-      this.wStart = N <= 2 ? 1 : rng.int(1, Math.max(1, Math.floor((N - 1) * 0.6)));
-
-      const S = FR.clamp(0.6 * D * (N - 1), 1.0 * D, 5.0 * D);
-      this.gap = N > 1 ? S / (N - 1) : 0;
-      this.sp1 = rng() * 6.28;
-      this.sp2 = rng() * 6.28;
-
-      // ---- стартовая решётка ----
-      const gridOrder = rng.shuffle(players.map((_, i) => i));
-      this.order = gridOrder.slice();
+      // ---- стартовая решётка: честное перемешивание ----
+      const gridOrder = FR.secureShuffle(players.map((_, i) => i));
       const perRow = Math.min(4, N);
       this.marbles = players.map((p, i) => ({
         id: i, p, s: 0, l: 0, v: 0, vl: 0, z: 0, vz: 0,
-        spin: rng() * 6.28, offset: 0, slot: 0, boost: 0, fi: 0,
+        spin: rng() * 6.28, boost: 0, fi: 0, form: gauss(rng) * 0.03,
         finished: false, finishTime: 0, place: -1,
         laneT: 0, laneTimer: rng.range(1, 3), ph1: rng() * 6.28, ph2: rng() * 6.28,
-        wash: false, hitCd: 0, x: 0, y: 0, h: 0,
+        wash: false, hitCd: 0, x: 0, y: 0, h: 0, e: 0,
+        lostT: 0, rocket: false, rockets: 0,
       }));
       gridOrder.forEach((id, r) => {
         const row = Math.floor(r / perRow), col = r % perRow;
@@ -56,157 +55,87 @@
         m.l = (col - (inRow - 1) / 2) * 45;
         m.laneT = m.l;
       });
-      this.sc = this.marbles.reduce((a, m) => a + m.s, 0) / N;
-      this.marbles.forEach((m) => (m.offset = m.s - this.sc));
 
-      // ---- базовая скорость, чтобы победитель финишировал около T ----
-      const endOffsets = this.slotOffsets(0.8, this.photoGap);
-      const endC = tr.finish - (endOffsets[0] || 0);
+      // ---- базовая скорость: средний шарик проходит трассу за T ----
       let I = 0;
-      for (let s = this.sc; s < endC; s += FR.STEP) I += FR.STEP / tr.fAt(s);
-      this.v0 = I / (this.T - 1.3);
+      const s0 = this.marbles.reduce((a, m) => a + m.s, 0) / N;
+      for (let s = s0; s < tr.finish; s += FR.STEP) I += FR.STEP / tr.fAt(s);
+      this.v0 = I / (this.T * 1.065 - 1.3); // лидер обычно чуть быстрее среднего
 
       this.t = 0;
-      this.swapTimer = 2;
       this.events = [];
       this.finishCount = 0;
       this.results = [];
       this.winnerDone = false;
       this.winnerTime = 0;
-      this.ranking = this.order.slice();
+      this.ranking = gridOrder.slice();
       this.leader = this.ranking[0];
-      this.leaderSince = 0;
       this.lastLeadChange = 0;
       this.sectionIdx = 0;
       this.milestones = {};
+      this.photoFinish = false;
       this.maxSpread = 0;
-    }
-
-    // Позиции «слотов» относительно центра группы (индекс = место)
-    slotOffsets(spread, photoGap) {
-      const N = this.N;
-      const pos = [0];
-      for (let r = 0; r < N - 1; r++) {
-        const g = r === 0 && photoGap != null ? photoGap : this.gap * spread;
-        pos.push(pos[r] - g);
-      }
-      const c = pos.reduce((a, b) => a + b, 0) / N;
-      return pos.map((p) => p - c);
-    }
-
-    finalTarget(t) {
-      const others = this.finalOrder.slice(1);
-      const t1 = this.T - 24, t2 = this.T - this.tw;
-      let w = this.wStart;
-      if (t >= t1) w = Math.round(FR.lerp(this.wStart, 0, FR.clamp((t - t1) / (t2 - t1), 0, 1)));
-      w = Math.min(w, others.length);
-      others.splice(w, 0, this.winner);
-      return others;
-    }
-
-    swap(i) {
-      const o = this.order;
-      const t = o[i]; o[i] = o[i + 1]; o[i + 1] = t;
-    }
-
-    updateOrder(dt) {
-      const N = this.N, t = this.t, T = this.T, rng = this.rng;
-      if (N < 2) return;
-      this.swapTimer -= dt;
-      if (this.swapTimer > 0) return;
-      const fStart = T - 42;
-      if (t < fStart) {
-        this.swapTimer = rng.range(1.8, 4.6) * Math.pow(6 / Math.max(3, N), 0.35);
-        const o = this.order;
-        if (t - this.leaderSince > 30) {
-          this.swap(0);
-          return;
-        }
-        const r = rng();
-        if (r < 0.62) {
-          this.swap(rng.int(0, N - 2));
-        } else if (r < 0.87 && N >= 3) {
-          const from = rng.int(2, N - 1);
-          const to = Math.max(0, from - rng.int(2, 3));
-          const id = o.splice(from, 1)[0];
-          o.splice(to, 0, id);
-          this.events.push({ type: 'rush', id });
-        } else {
-          const id = o.shift();
-          o.splice(Math.min(N - 1, rng.int(1, 2)), 0, id);
-          this.events.push({ type: 'stumble', id });
-        }
-      } else {
-        const target = this.finalTarget(t);
-        const rankIn = new Array(N);
-        target.forEach((id, r) => (rankIn[id] = r));
-        const o = this.order;
-        const pairs = [];
-        for (let i = 0; i < N - 1; i++) if (rankIn[o[i]] > rankIn[o[i + 1]]) pairs.push(i);
-        if (pairs.length) this.swap(pairs[rng.int(0, pairs.length - 1)]);
-        this.swapTimer = FR.clamp(9 / Math.max(1, pairs.length * 2), 0.35, 1.1);
-      }
+      this.rescues = 0;
     }
 
     trigger(m, f) {
       if (m.finished) return;
       if (f.type === 'boost') {
         if (m.l >= f.l0 - 6 && m.l <= f.l1 + 6) {
-          m.boost = 0.55 * this.v0;
+          m.boost = 0.5 * this.v0;
           this.events.push({ type: 'boost', id: m.id });
         }
       } else if (f.type === 'jump') {
         m.pendingJump = f.s + f.len;
       } else if (f.type === 'gate') {
-        if (this.ranking[0] === m.id || f.theme > this.sectionIdx) {
-          if (f.theme > this.sectionIdx) {
-            this.sectionIdx = f.theme;
-            this.events.push({ type: 'section', theme: f.theme, id: m.id });
-          }
+        if (f.theme > this.sectionIdx) {
+          this.sectionIdx = f.theme;
+          this.events.push({ type: 'section', theme: f.theme, id: m.id });
         }
       }
     }
 
     step(dt) {
-      const tr = this.track, rng = this.rng, N = this.N, T = this.T;
+      const tr = this.track, rng = this.rng;
       this.t += dt;
       const t = this.t;
       const ramp = Math.min(1, t / 2.6);
       const v0 = this.v0;
-
-      if (!this.winnerDone) this.sc += v0 * tr.fAt(this.sc) * ramp * dt;
-      else this.sc += v0 * 0.5 * dt;
-
-      this.updateOrder(dt);
-
-      let spread = 0.85 + 0.32 * Math.sin(t * 0.11 + this.sp1) * Math.sin(t * 0.047 + this.sp2);
-      let photoGap = null;
-      const tf = t - (T - 9);
-      if (tf > 0) {
-        const k = FR.smooth(tf / 6);
-        spread = FR.lerp(spread, 0.8, k);
-        photoGap = FR.lerp(this.gap * spread, this.photoGap, k);
-      }
-      const offs = this.slotOffsets(spread, photoGap);
-      for (let r = 0; r < N; r++) this.marbles[this.order[r]].slot = offs[r];
-
       const feats = tr.feats;
-      const endGame = t > T - 6;
+      const leadS = this.marbles[this.ranking[0]].s;
+      const sq = Math.sqrt(dt);
+
       for (const m of this.marbles) {
-        const rate = 0.95 * D;
-        m.offset += FR.clamp(m.slot - m.offset, -rate * dt, rate * dt);
+        // «форма» шарика: медленно и случайно меняется (процесс Орнштейна—Уленбека)
+        const tau = 6, sigma = 0.085;
+        m.form += (-m.form / tau) * dt + sigma * Math.sqrt(2 / tau) * gauss(rng) * sq;
+
+        // ракета-догонялка
+        if (!m.finished) {
+          const gap = leadS - m.s;
+          if (m.rocket) {
+            if (gap < RESCUE_UNTIL) m.rocket = false;
+          } else if (gap > LOST && t > 6) {
+            m.lostT += dt;
+            if (m.lostT > RESCUE_DELAY) {
+              m.rocket = true;
+              m.rockets++;
+              m.lostT = 0;
+              this.rescues++;
+              this.events.push({ type: 'rescue', id: m.id });
+            }
+          } else m.lostT = 0;
+        } else m.rocket = false;
+
         let vt;
         if (m.finished) {
           const past = m.s - tr.finish;
           vt = Math.max(0, v0 * 0.9 * (1 - past / 650));
         } else {
-          const err = this.sc + m.offset - m.s;
-          const noise = 0.035 * Math.sin(t * 0.83 + m.ph1) + 0.02 * Math.sin(t * 2.1 + m.ph2);
-          const kp = endGame ? 2.2 : 0.9;
-          vt = v0 * tr.fAt(m.s) * ramp * (1 + (endGame ? 0 : noise)) +
-            FR.clamp(err * kp, -0.4 * v0, 0.55 * v0) + m.boost;
+          const wob = 0.025 * Math.sin(t * 1.7 + m.ph1);
+          vt = v0 * tr.fAt(m.s) * ramp * (1 + m.form + wob) + m.boost + (m.rocket ? 1.1 * v0 : 0);
         }
-        const up = 260, down = 380;
+        const up = m.rocket ? 420 : 240, down = 380;
         m.v += FR.clamp(vt - m.v, -down * dt, up * dt);
         if (m.v < 0) m.v = 0;
         m.s += m.v * dt;
@@ -257,18 +186,16 @@
         }
       }
 
-      // объезд впереди идущих
+      // объезд более медленных впереди
       for (const m of this.marbles) {
         if (m.finished) continue;
         let ahead = null, best = 1e9;
         for (const o of this.marbles) {
           if (o === m) continue;
           const ds = o.s - m.s;
-          if (ds > 0 && ds < D * 1.6 && Math.abs(o.l - m.l) < D * 0.95 && ds < best) {
-            best = ds; ahead = o;
-          }
+          if (ds > 0 && ds < D * 1.7 && Math.abs(o.l - m.l) < D * 0.95 && ds < best) { best = ds; ahead = o; }
         }
-        if (ahead && this.sc + m.offset - m.s > D * 0.3) {
+        if (ahead && m.v > ahead.v + 4) {
           const left = ahead.l - D * 1.1, right = ahead.l + D * 1.1;
           const toLeft = left > -LIM ? Math.abs(m.l - left) : 1e9;
           const toRight = right < LIM ? Math.abs(m.l - right) : 1e9;
@@ -277,7 +204,7 @@
         }
       }
 
-      this.collide(endGame);
+      this.collide();
       this.pegs();
 
       // финиш
@@ -287,11 +214,14 @@
           m.finishTime = this.t - (m.s - tr.finish) / Math.max(1, m.v);
           m.place = this.finishCount++;
           this.results.push(m.id);
-          this.events.push({ type: 'finish', id: m.id, place: m.place });
           if (m.place === 0) {
             this.winnerDone = true;
             this.winnerTime = m.finishTime;
+            let second = -1e9;
+            for (const o of this.marbles) if (o !== m) second = Math.max(second, o.s);
+            this.photoFinish = m.s - second < D * 0.8;
           }
+          this.events.push({ type: 'finish', id: m.id, place: m.place });
         }
       }
 
@@ -306,7 +236,6 @@
       if (rk[0] !== this.leader) {
         const prev = this.leader;
         this.leader = rk[0];
-        this.leaderSince = t;
         if (t > 5 && t - this.lastLeadChange > 1.2 && !this.winnerDone) {
           this.events.push({ type: 'lead', id: rk[0], prev });
           this.lastLeadChange = t;
@@ -321,12 +250,19 @@
         this.spreadNow = mx - mn;
         this.maxSpread = Math.max(this.maxSpread, mx - mn);
       }
+      // скоро фотофиниш?
+      if (!this.winnerDone && tr.finish - lead.s < D * 4) {
+        const sec = this.marbles[rk[1]];
+        this.closeFinish = sec && lead.s - sec.s < D * 1.2;
+      }
       const ms = this.milestones;
       if (!ms.half && this.progress >= 0.5) { ms.half = 1; this.events.push({ type: 'half' }); }
       if (!ms.straight && lead.s > tr.finish - 1100) { ms.straight = 1; this.events.push({ type: 'straight' }); }
-      if (!ms.minute && T - t < 60 && !this.winnerDone) { ms.minute = 1; this.events.push({ type: 'minute' }); }
+      if (!ms.minute && this.T > 100 && this.progress > 1 - 60 / this.T && !this.winnerDone) {
+        ms.minute = 1; this.events.push({ type: 'minute' });
+      }
 
-      this.allDone = this.finishCount === N;
+      this.allDone = this.finishCount === this.N;
     }
 
     wall(m) {
@@ -345,9 +281,9 @@
       }
     }
 
-    collide(endGame) {
+    collide() {
       const ms = this.marbles, N = ms.length;
-      const sK = endGame ? 0.1 : 0.55;
+      const sK = 0.55;
       for (let it = 0; it < 2; it++) {
         for (let i = 0; i < N; i++) {
           const a = ms[i];
@@ -398,15 +334,11 @@
             const d = Math.sqrt(ds * ds + dl * dl);
             if (d >= R + PR) continue;
             let side = dl === 0 ? (this.rng() < 0.5 ? 1 : -1) : Math.sign(dl);
-            // выталкиваем вбок, чтобы шарик объехал штырёк
             const need = Math.sqrt(Math.max(0, (R + PR) * (R + PR) - ds * ds));
             m.l = p.l + side * need;
-            if (Math.abs(m.l) > LIM) {
-              side = -side;
-              m.l = p.l + side * need;
-            }
+            if (Math.abs(m.l) > LIM) { side = -side; m.l = p.l + side * need; }
             m.vl = side * Math.max(Math.abs(m.vl), 70);
-            m.v *= 0.985;
+            m.v *= 0.98;
             if (p.flash < 0.2) this.events.push({ type: 'peg', id: m.id });
             p.flash = 1;
           }

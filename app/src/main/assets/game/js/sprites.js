@@ -362,65 +362,60 @@
     g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
     SP.glow = glow;
 
-    // блик для шариков
-    const sh = canvas(128), s = sh.getContext('2d');
-    let gg = s.createRadialGradient(64, 64, 40, 64, 64, 64);
+    // блик для шариков: только у края и маленький блик, лицо не замутняется
+    const sh = canvas(256), s = sh.getContext('2d');
+    let gg = s.createRadialGradient(128, 128, 100, 128, 128, 128);
     gg.addColorStop(0, 'rgba(255,255,255,0)');
-    gg.addColorStop(0.75, 'rgba(255,255,255,0.08)');
-    gg.addColorStop(1, 'rgba(255,255,255,0.35)');
-    s.fillStyle = gg; s.beginPath(); s.arc(64, 64, 64, 0, 6.28); s.fill();
-    gg = s.createRadialGradient(64, 64, 30, 72, 76, 64);
-    gg.addColorStop(0, 'rgba(0,0,0,0)');
-    gg.addColorStop(1, 'rgba(0,0,30,0.32)');
-    s.fillStyle = gg; s.beginPath(); s.arc(64, 64, 64, 0, 6.28); s.fill();
+    gg.addColorStop(1, 'rgba(255,255,255,0.28)');
+    s.fillStyle = gg; s.beginPath(); s.arc(128, 128, 128, 0, 6.29); s.fill();
     s.save();
-    s.translate(42, 36); s.rotate(-0.6);
-    gg = s.createRadialGradient(0, 0, 0, 0, 0, 24);
-    gg.addColorStop(0, 'rgba(255,255,255,0.95)');
+    s.translate(78, 66); s.rotate(-0.6);
+    gg = s.createRadialGradient(0, 0, 0, 0, 0, 34);
+    gg.addColorStop(0, 'rgba(255,255,255,0.85)');
     gg.addColorStop(1, 'rgba(255,255,255,0)');
-    s.fillStyle = gg; s.beginPath(); s.ellipse(0, 0, 24, 14, 0, 0, 6.28); s.fill();
+    s.fillStyle = gg; s.beginPath(); s.ellipse(0, 0, 34, 18, 0, 0, 6.29); s.fill();
     s.restore();
-    circle(88, 94, 5, 'rgba(255,255,255,0.45)', s);
     SP.shine = sh;
 
     SP.ready = true;
   };
 
-  // Лицо игрока внутри шарика
+  // Лицо игрока внутри шарика (256 px — чётко даже на плотных экранах)
   SP.face = function (img, color) {
-    const c = canvas(128), ctx = c.getContext('2d');
+    const c = canvas(256), ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
     ctx.save();
-    ctx.beginPath(); ctx.arc(64, 64, 56, 0, 6.28); ctx.clip();
-    ctx.fillStyle = color; ctx.fillRect(0, 0, 128, 128);
+    ctx.beginPath(); ctx.arc(128, 128, 112, 0, 6.29); ctx.clip();
+    ctx.fillStyle = color; ctx.fillRect(0, 0, 256, 256);
     if (img) {
       const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-      const k = Math.max(112 / iw, 112 / ih);
-      ctx.drawImage(img, 64 - (iw * k) / 2, 64 - (ih * k) / 2, iw * k, ih * k);
+      const k = Math.max(224 / iw, 224 / ih);
+      ctx.drawImage(img, 128 - (iw * k) / 2, 128 - (ih * k) / 2, iw * k, ih * k);
     }
-    const g = ctx.createRadialGradient(64, 64, 36, 64, 64, 58);
+    const g = ctx.createRadialGradient(128, 128, 80, 128, 128, 114);
     g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(1, 'rgba(0,0,0,0.35)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+    g.addColorStop(1, 'rgba(0,0,0,0.22)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
     ctx.restore();
     return c;
   };
 
-  // Цветное кольцо-«завихрение», вращается при качении
+  // Цветное кольцо-оправа: мягкие широкие сегменты, без мелькания
   SP.ring = function (color) {
-    const c = canvas(128), ctx = c.getContext('2d');
-    const n = 10;
+    const c = canvas(256), ctx = c.getContext('2d');
+    const n = 4;
     for (let i = 0; i < n; i++) {
       ctx.beginPath();
-      ctx.arc(64, 64, 60, (i / n) * 6.28, ((i + 1) / n) * 6.28);
-      ctx.arc(64, 64, 52, ((i + 1) / n) * 6.28, (i / n) * 6.28, true);
+      ctx.arc(128, 128, 124, (i / n) * 6.2832, ((i + 1) / n) * 6.2832);
+      ctx.arc(128, 128, 108, ((i + 1) / n) * 6.2832, (i / n) * 6.2832, true);
       ctx.closePath();
-      ctx.fillStyle = i % 2 ? FR.shade(color, 0.55) : color;
+      ctx.fillStyle = i % 2 ? FR.shade(color, 0.3) : color;
       ctx.fill();
     }
-    ctx.strokeStyle = FR.shade(color, -0.4); ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(64, 64, 62, 0, 6.28); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(64, 64, 52, 0, 6.28); ctx.stroke();
+    ctx.strokeStyle = FR.shade(color, -0.35); ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(128, 128, 125, 0, 6.29); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(128, 128, 108, 0, 6.29); ctx.stroke();
     return c;
   };
 
