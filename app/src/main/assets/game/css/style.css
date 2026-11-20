@@ -484,3 +484,12 @@ button { font-family: inherit; color: inherit; border: 0; background: none; curs
   .banner { top: 26%; }
   .standings { top: calc(var(--safe-top) + 58px); }
 }
+
+/* ================= ОБЛЕГЧЁННЫЙ РЕЖИМ ================= */
+body.lite .card, body.lite .modal { backdrop-filter: none; -webkit-backdrop-filter: none; }
+body.lite .card { background: rgba(60, 40, 140, .85); }
+body.lite .bubble, body.lite .sky { display: none; }
+body.lite .btn.big span, body.lite .lb, body.lite .pod .crown, body.lite .chip .dot, body.lite .slowmo.show { animation: none; }
+body.lite .st-item .sav, body.lite .chip, body.lite .comment { box-shadow: none; }
+body.lite .st-item.first .sav { box-shadow: 0 0 0 3px #ffc53d; }
+body.lite #results { background: rgba(25, 14, 60, .9); }

@@ -14,7 +14,8 @@
     },
     set(k, v) { try { localStorage.setItem('fr_' + k, JSON.stringify(v)); } catch (e) { /* нет места */ } },
   };
-  const settings = Object.assign({ music: true, sfx: true, voice: true, mode: 'full' }, store.get('settings', {}));
+  const IS_TV = !!(AND && AND.isTv && AND.isTv()) || Q.get('tv') === '1';
+  const settings = Object.assign({ music: true, sfx: true, voice: true, mode: 'full', lite: IS_TV, liteManual: false }, store.get('settings', {}));
   const saveSettings = () => store.set('settings', settings);
   AU.musicOn = settings.music;
   AU.sfxOn = settings.sfx;
@@ -220,6 +221,7 @@
       toggleHtml('music', settings.music, '🎵 Музыка') +
       toggleHtml('sfx', settings.sfx, '🔊 Звуки') +
       toggleHtml('voice', settings.voice, '🎙️ Голос комментатора') +
+      toggleHtml('lite', settings.lite, '⚡ Облегчённая графика') +
       (inRace ? '' :
         '<div class="set-row" style="flex-direction:column;align-items:stretch;gap:8px"><span>⏱ Длительность гонки</span>' +
         '<div class="seg" id="mMode">' +
@@ -243,6 +245,7 @@
             if (k === 'music') AU.setMusic(settings.music);
             if (k === 'sfx') AU.setSfx(settings.sfx);
             if (k === 'voice' && !settings.voice && AND) AND.stopSpeak();
+            if (k === 'lite') { settings.liteManual = true; saveSettings(); applyLite(); }
           };
         }
         const seg = c.querySelector('#mMode');
@@ -359,6 +362,26 @@
   // ---------------- гонка ----------------
   const state = { mode: 'menu', race: null, racers: null, paused: false, acc: 0, ts: 1, slowHold: 0, endTimer: 0 };
   const renderer = new FR.Renderer($('game'));
+  renderer.tv = IS_TV;
+  function applyLite() {
+    document.body.classList.toggle('lite', !!settings.lite);
+    renderer.setLite(settings.lite);
+  }
+  applyLite();
+  // Автоопределение: если кадров мало — включаем облегчённую графику
+  const perf = { sum: 0, n: 0 };
+  function watchPerf(realDt) {
+    if (settings.lite || settings.liteManual || state.mode !== 'race' || state.paused) { perf.sum = perf.n = 0; return; }
+    perf.sum += realDt; perf.n++;
+    if (perf.sum > 4) {
+      const fps = perf.n / perf.sum;
+      perf.sum = perf.n = 0;
+      if (fps < 32) {
+        settings.lite = true; saveSettings(); applyLite();
+        toast('⚡ Включена облегчённая графика');
+      }
+    }
+  }
   const warp = +Q.get('warp') || 1;
 
   function durationFor() {
@@ -620,6 +643,7 @@
   function frame(ts) {
     const realDt = Math.min(0.05, lastTs ? (ts - lastTs) / 1000 : 0.016);
     lastTs = ts;
+    watchPerf(realDt);
     if (state.race && state.mode !== 'menu') {
       let sim = 0;
       if (!state.paused) {

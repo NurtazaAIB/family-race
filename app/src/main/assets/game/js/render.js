@@ -22,13 +22,14 @@
     }
 
     resize() {
-      this.dpr = Math.min(3, G.devicePixelRatio || 1);
+      this.dpr = this.lite ? Math.min(this.tv ? 1 : 1.5, G.devicePixelRatio || 1) : Math.min(3, G.devicePixelRatio || 1);
       this.w = G.innerWidth;
       this.h = G.innerHeight;
       this.cv.width = Math.round(this.w * this.dpr);
       this.cv.height = Math.round(this.h * this.dpr);
       this.landscape = this.w > this.h;
       this.baseZ = Math.min(this.w * 0.6, this.h * 0.45, 420) / (FR.TRACK_W + RAIL * 2);
+      this.clearTiles();
     }
 
     setRace(race, faces) {
@@ -39,6 +40,7 @@
       this.parts.length = 0;
       this.screenParts.length = 0;
       this.celebrating = false;
+      this.clearTiles();
       this.trails = race.marbles.map(() => []);
       const s0 = race.marbles.reduce((a, m) => a + m.s, 0) / race.marbles.length;
       const p = this.tr.pos(s0 - 40, 0, {});
@@ -127,10 +129,12 @@
     }
 
     spark(x, y, color, sp, life) {
+      if (this.lite && Math.random() < 0.6) return;
       const a = Math.random() * TAU, v = sp * (0.4 + Math.random() * 0.8);
       this.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, max: life, size: 3 + Math.random() * 3, color, kind: 'spark' });
     }
     confettiWorld(x, y) {
+      if (this.lite && Math.random() < 0.6) return;
       const a = Math.random() * TAU, v = 80 + Math.random() * 220;
       this.parts.push({
         x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1.6, max: 1.6, size: 6 + Math.random() * 4,
@@ -138,6 +142,7 @@
       });
     }
     burstScreen(n) {
+      if (this.lite) n = Math.ceil(n * 0.35);
       for (let i = 0; i < n; i++) {
         this.screenParts.push({
           x: Math.random() * this.w, y: -20 - Math.random() * this.h * 0.4,
@@ -175,14 +180,14 @@
       const race = this.race;
       for (const m of race.marbles) {
         const th = FR.THEMES[this.tr.themeAt(m.s)];
-        if (m.v > 40 && m.z === 0 && (th.ice || m.wash) && Math.random() < dt * 14) {
+        if (!this.lite && m.v > 40 && m.z === 0 && (th.ice || m.wash) && Math.random() < dt * 14) {
           this.parts.push({
             x: m.x + (Math.random() - 0.5) * 16, y: m.y + (Math.random() - 0.5) * 16,
             vx: (Math.random() - 0.5) * 30, vy: (Math.random() - 0.5) * 30, life: 0.7, max: 0.7, size: 5,
             color: th.ice ? '#ffffff' : '#d8b98a', kind: 'dust',
           });
         }
-        if (m.rocket && Math.random() < dt * 40) {
+        if (m.rocket && Math.random() < dt * (this.lite ? 14 : 40)) {
           const b = this.tr.pos(m.s - R * 1.1, m.l + (Math.random() - 0.5) * 10, {});
           this.parts.push({
             x: b.x, y: b.y, vx: (Math.random() - 0.5) * 40, vy: (Math.random() - 0.5) * 40,
@@ -191,7 +196,7 @@
           });
         }
         const tr = this.trails[m.id];
-        if (m.boost > 18 || m.rocket) {
+        if (!this.lite && (m.boost > 18 || m.rocket)) {
           tr.push({ x: m.x, y: m.y });
           if (tr.length > 10) tr.shift();
         } else if (tr.length) tr.shift();
@@ -214,7 +219,7 @@
       }
       if (this.celebrating) {
         this.fwTimer = (this.fwTimer || 0) - realDt;
-        if (this.fwTimer <= 0) { this.firework(); this.fwTimer = 0.5 + Math.random() * 0.7; }
+        if (this.fwTimer <= 0) { this.firework(); this.fwTimer = (this.lite ? 1.4 : 0.5) + Math.random() * 0.7; }
         if (Math.random() < realDt * 6) this.burstScreen(2);
       }
       // вспышки штырьков
@@ -246,8 +251,41 @@
       const vy0 = cam.y - cy / z, vy1 = cam.y + (h - cy) / z;
       this.view = { x0: vx0, x1: vx1, y0: vy0, y1: vy1 };
 
-      // видимые участки трассы, разделённые по уровням (земля / мост)
-      const blocks = tr.blocks;
+      if (this.lite) this.drawTiles(vx0, vx1, vy0, vy1, z);
+      const lvl = this.ranges(vx0, vx1, vy0, vy1);
+      if (!this.lite) {
+        this.drawPatches(vy0, vy1);
+        this.drawDecor(vy0, vy1, false);
+        this.drawTrack(lvl[0], 0);
+        this.drawFeatures(0, false);
+      } else {
+        this.drawLiveBits();
+      }
+      this.drawMarbles(0);
+      if (lvl[1].length) {
+        this.drawTrack(lvl[1], 1);
+        this.drawFeatures(1, false);
+      }
+      this.drawMarbles(1);
+      this.drawParts();
+      this.drawFeatures(-1, true);
+      if (!this.lite) this.drawDecor(vy0, vy1, true);
+
+      // экранный слой
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.drawLabels(cx, cy);
+      if (this.slowmo > 0.01 && !this.lite) {
+        const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.75);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        g.addColorStop(1, 'rgba(10,0,30,' + 0.55 * this.slowmo + ')');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      }
+      this.drawScreenParts();
+    }
+
+    // Видимые участки трассы, разделённые по уровням (земля / мост); заполняет this.vis
+    ranges(vx0, vx1, vy0, vy1) {
+      const tr = this.tr, blocks = tr.blocks;
       if (!this.vis || this.vis.length !== blocks.length) this.vis = new Uint8Array(blocks.length);
       const vis = this.vis;
       const runs = [];
@@ -269,31 +307,88 @@
         }
         lvl[cur].push([st, b]);
       }
+      return lvl;
+    }
 
-      this.drawPatches(vy0, vy1);
-      this.drawDecor(vy0, vy1, false);
+    // ---------- облегчённый режим: неподвижный мир рисуется плитками один раз ----------
+    setLite(on) {
+      this.lite = !!on;
+      this.resize();
+    }
+
+    clearTiles() {
+      this.tiles = new Map();
+      this.tileScale = this.baseZ * this.dpr * 1.1;
+    }
+
+    buildTile(tx, ty) {
+      const T = TILE, sc = this.tileScale;
+      const c = document.createElement('canvas');
+      c.width = c.height = Math.ceil(T * sc);
+      const tctx = c.getContext('2d');
+      const saveCtx = this.ctx, saveView = this.view, saveVis = this.vis;
+      this.ctx = tctx;
+      this.vis = null;
+      const x0 = tx * T, y0 = ty * T, x1 = x0 + T, y1 = y0 + T;
+      tctx.setTransform(sc, 0, 0, sc, -x0 * sc, -y0 * sc);
+      this.view = { x0, x1, y0, y1 };
+      const lvl = this.ranges(x0, x1, y0, y1);
+      this.drawPatches(y0, y1);
+      this.drawDecor(y0, y1, false);
       this.drawTrack(lvl[0], 0);
-      this.drawFeatures(0, false);
-      this.drawMarbles(0);
-      if (lvl[1].length) {
-        this.drawTrack(lvl[1], 1);
-        this.drawFeatures(1, false);
-      }
-      this.drawMarbles(1);
-      this.drawParts();
-      this.drawFeatures(-1, true);
-      this.drawDecor(vy0, vy1, true);
+      this.drawFeatures(0, false, true);
+      this.ctx = saveCtx; this.view = saveView; this.vis = saveVis;
+      return c;
+    }
 
-      // экранный слой
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      this.drawLabels(cx, cy);
-      if (this.slowmo > 0.01) {
-        const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.75);
-        g.addColorStop(0, 'rgba(0,0,0,0)');
-        g.addColorStop(1, 'rgba(10,0,30,' + 0.55 * this.slowmo + ')');
-        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    getTile(tx, ty, build) {
+      const key = tx + ',' + ty;
+      let c = this.tiles.get(key);
+      if (c) {
+        this.tiles.delete(key);
+        this.tiles.set(key, c);
+        return c;
       }
-      this.drawScreenParts();
+      if (!build) return null;
+      c = this.buildTile(tx, ty);
+      this.tiles.set(key, c);
+      while (this.tiles.size > 26) this.tiles.delete(this.tiles.keys().next().value);
+      return c;
+    }
+
+    drawTiles(vx0, vx1, vy0, vy1, z) {
+      if (!this.tiles) this.clearTiles();
+      const T = TILE, ctx = this.ctx;
+      const ov = 1 / (z * this.dpr);
+      for (let ty = Math.floor(vy0 / T); ty <= Math.floor(vy1 / T); ty++) {
+        for (let tx = Math.floor(vx0 / T); tx <= Math.floor(vx1 / T); tx++) {
+          const c = this.getTile(tx, ty, true);
+          ctx.drawImage(c, tx * T, ty * T, T + ov, T + ov);
+        }
+      }
+      // заранее готовим одну плитку впереди лидера
+      const race = this.race, tr = this.tr;
+      const ls = race.marbles[race.ranking[0]].s;
+      this.pf = ((this.pf || 0) + 1) % 20;
+      const d = 250 + (this.pf >> 2) * 300;
+      const p = tr.pos(ls + d, 0, this.tmp);
+      const k = this.pf & 3;
+      const ox = k & 1 ? 300 : -300, oy = k & 2 ? 300 : -300;
+      this.getTile(Math.floor((p.x + ox) / T), Math.floor((p.y + oy) / T), true);
+    }
+
+    // мигание столбиков в облегчённом режиме (сами столбики — в плитках)
+    drawLiveBits() {
+      const ctx = this.ctx, tr = this.tr;
+      for (const f of tr.feats) {
+        if (!f.pegs) continue;
+        for (const p of f.pegs) {
+          if (p.flash <= 0) continue;
+          const q = tr.pos(p.s, p.l, this.tmp);
+          ctx.strokeStyle = 'rgba(255,230,90,' + p.flash + ')'; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.arc(q.x, q.y, 12 + (1 - p.flash) * 14, 0, TAU); ctx.stroke();
+        }
+      }
     }
 
     drawPatches(y0, y1) {
@@ -464,8 +559,8 @@
       ctx.globalAlpha = 1;
     }
 
-    drawFeatures(level, overhead) {
-      const ctx = this.ctx, tr = this.tr, t = this.time;
+    drawFeatures(level, overhead, still) {
+      const ctx = this.ctx, tr = this.tr, t = still ? 0.25 : this.time;
       const visS = (s) => this.vis[Math.floor(tr.idx(s) / 24)] === 1 || this.vis[Math.max(0, Math.floor(tr.idx(s) / 24) - 1)] === 1;
       const lv = (s) => (tr.eAt(s) > 0.5 ? 1 : 0);
       if (!overhead) {
@@ -538,7 +633,7 @@
             g.addColorStop(0, '#ffffff'); g.addColorStop(0.5, '#c6d2e0'); g.addColorStop(1, '#5f6f83');
             ctx.fillStyle = g;
             ctx.beginPath(); ctx.arc(q.x, q.y, 10, 0, TAU); ctx.fill();
-            if (p.flash > 0) {
+            if (p.flash > 0 && !still) {
               ctx.strokeStyle = 'rgba(255,230,90,' + p.flash + ')'; ctx.lineWidth = 4;
               ctx.beginPath(); ctx.arc(q.x, q.y, 12 + (1 - p.flash) * 14, 0, TAU); ctx.stroke();
             }
@@ -770,6 +865,7 @@
     }
   }
 
+  const TILE = 512;
   const FONT = "'Nunito', system-ui, Roboto, sans-serif";
   const EMOJI = "'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif";
 
