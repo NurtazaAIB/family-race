@@ -77,7 +77,8 @@
       const k = 1 - Math.exp(-dt * (this.focus ? 2.2 : 3));
       cam.x += (tx - cam.x) * k;
       cam.y += (ty - cam.y) * k;
-      cam.z += (tz - cam.z) * (1 - Math.exp(-dt * 1.6));
+      if (this.lite) cam.z = this.liteZ; // постоянный масштаб: плитки рисуются пиксель в пиксель, без ряби
+      else cam.z += (tz - cam.z) * (1 - Math.exp(-dt * 1.6));
     }
 
     idxForY(y) {
@@ -246,7 +247,9 @@
       ctx.fillStyle = ground;
       ctx.fillRect(0, 0, w, h);
 
-      ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (cx - cam.x * z), dpr * (cy - cam.y * z));
+      let ox = dpr * (cx - cam.x * z), oy = dpr * (cy - cam.y * z);
+      if (this.lite) { ox = Math.round(ox); oy = Math.round(oy); } // привязка к пикселям
+      ctx.setTransform(dpr * z, 0, 0, dpr * z, ox, oy);
       const vx0 = cam.x - cx / z, vx1 = cam.x + (w - cx) / z;
       const vy0 = cam.y - cy / z, vy1 = cam.y + (h - cy) / z;
       this.view = { x0: vx0, x1: vx1, y0: vy0, y1: vy1 };
@@ -318,13 +321,17 @@
 
     clearTiles() {
       this.tiles = new Map();
-      this.tileScale = this.baseZ * this.dpr * 1.1;
+      // масштаб подобран так, чтобы плитка занимала целое число пикселей
+      const px = Math.round(TILE * this.baseZ * 0.92 * this.dpr);
+      this.tileScale = px / TILE;
+      this.liteZ = this.tileScale / this.dpr;
+      if (this.lite && this.cam) this.cam.z = this.liteZ;
     }
 
     buildTile(tx, ty) {
       const T = TILE, sc = this.tileScale;
       const c = document.createElement('canvas');
-      c.width = c.height = Math.ceil(T * sc);
+      c.width = c.height = Math.round(T * sc);
       const tctx = c.getContext('2d');
       const saveCtx = this.ctx, saveView = this.view, saveVis = this.vis;
       this.ctx = tctx;
@@ -359,7 +366,7 @@
     drawTiles(vx0, vx1, vy0, vy1, z) {
       if (!this.tiles) this.clearTiles();
       const T = TILE, ctx = this.ctx;
-      const ov = 1 / (z * this.dpr);
+      const ov = 0;
       for (let ty = Math.floor(vy0 / T); ty <= Math.floor(vy1 / T); ty++) {
         for (let tx = Math.floor(vx0 / T); tx <= Math.floor(vx1 / T); tx++) {
           const c = this.getTile(tx, ty, true);
@@ -791,7 +798,8 @@
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       const showNames = z > this.baseZ * 0.7 || race.N <= 6;
       for (const m of race.marbles) {
-        const sx = cx + (m.x - cam.x) * z, sy = cy + (m.y - cam.y) * z;
+        let sx = cx + (m.x - cam.x) * z, sy = cy + (m.y - cam.y) * z;
+        if (this.lite) { sx = Math.round(sx); sy = Math.round(sy); }
         if (sx < -10 || sx > this.w + 10 || sy < -10 || sy > this.h + 10) {
           if (!m.finished) this.offscreen(m, sx, sy, cx, cy);
           continue;

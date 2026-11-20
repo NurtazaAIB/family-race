@@ -270,8 +270,8 @@
       const o = tone(110, 'sine', t, 0.002, 0.55, 0.16, out);
       o.frequency.exponentialRampToValueAtTime(45, t + 0.14);
     }
-    // хэт
-    if (step % 2 === 1 || A.intense > 0.5) {
+    // хэт (в облегчённом режиме без шумовых ударных — меньше нагрузки)
+    if (!A.lite && (step % 2 === 1 || A.intense > 0.5)) {
       const s = noiseSrc();
       const f = A.ctx.createBiquadFilter();
       f.type = 'highpass'; f.frequency.value = 7000;
@@ -281,7 +281,7 @@
       s.start(t); s.stop(t + 0.06);
     }
     // хлопок
-    if (step === 4 || step === 12) {
+    if (!A.lite && (step === 4 || step === 12)) {
       const s = noiseSrc();
       const f = A.ctx.createBiquadFilter();
       f.type = 'bandpass'; f.frequency.value = 1500; f.Q.value = 0.8;
@@ -295,7 +295,7 @@
       tone(mtof(chord[0] - 12 + (step === 14 ? 7 : 0)), 'triangle', t, 0.005, 0.3, 0.2, out);
     }
     // арпеджио
-    if (step % 2 === 0) {
+    if (step % 2 === 0 && (!A.lite || step % 4 === 0)) {
       const n = chord[1 + ((step / 2) % 5)];
       const o = tone(mtof(n), 'square', t, 0.004, 0.035, 0.12, out);
       o.detune.value = 4;

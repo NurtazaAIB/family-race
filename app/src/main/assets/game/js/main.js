@@ -366,6 +366,7 @@
   function applyLite() {
     document.body.classList.toggle('lite', !!settings.lite);
     renderer.setLite(settings.lite);
+    AU.lite = !!settings.lite;
   }
   applyLite();
   // Автоопределение: если кадров мало — включаем облегчённую графику
@@ -531,19 +532,19 @@
       renderer.focus = { x: w.x, y: w.y, z: 1.6 };
     }
 
-    const dt = 1 / 60;
-    state.acc += realDt * state.ts * warp;
-    let steps = 0;
-    const maxSteps = warp > 1 ? 100000 : 8;
+    // шаг симуляции точно равен времени кадра (делится на подшаги ≤ 1/60 с) —
+    // движение без рывков при любой частоте кадров
     let sim = 0;
-    while (state.acc >= dt && steps < maxSteps) {
-      race.step(dt);
-      handleEvents();
-      state.acc -= dt;
-      steps++;
-      sim += dt;
+    if (warp > 1) {
+      const dt = 1 / 60;
+      state.acc += realDt * state.ts * warp;
+      while (state.acc >= dt) { race.step(dt); handleEvents(); state.acc -= dt; sim += dt; }
+    } else {
+      const total = realDt * state.ts;
+      const n = Math.max(1, Math.ceil(total * 60 - 1e-6));
+      const dt = total / n;
+      for (let i = 0; i < n; i++) { race.step(dt); handleEvents(); sim += dt; }
     }
-    if (steps >= maxSteps) state.acc = 0;
 
     // атмосфера
     let vs = 0;
@@ -639,10 +640,22 @@
   }
 
   // ---------------- главный цикл ----------------
-  let lastTs = 0;
+  let lastTs = 0, frameNo = 0;
+  const pace = { sum: 0, n: 0, lock30: false };
   function frame(ts) {
-    const realDt = Math.min(0.05, lastTs ? (ts - lastTs) / 1000 : 0.016);
+    frameNo++;
+    // Ровные 30 кадров/с лучше, чем «плавающие» 40–50: на слабом ТВ включаем фиксированный темп
+    if (pace.lock30 && (frameNo & 1)) { requestAnimationFrame(frame); return; }
+    const rawDt = lastTs ? (ts - lastTs) / 1000 : 0.016;
+    const realDt = Math.min(0.05, pace.lock30 ? Math.round(rawDt * 30) / 30 || 1 / 30 : rawDt);
     lastTs = ts;
+    if (settings.lite && !pace.lock30 && state.mode === 'race' && !state.paused) {
+      pace.sum += rawDt; pace.n++;
+      if (pace.sum > 3) {
+        if (pace.n / pace.sum < 50) pace.lock30 = true;
+        pace.sum = pace.n = 0;
+      }
+    }
     watchPerf(realDt);
     if (state.race && state.mode !== 'menu') {
       let sim = 0;
