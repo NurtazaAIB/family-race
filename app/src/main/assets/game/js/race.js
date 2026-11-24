@@ -53,7 +53,7 @@
         laneT: 0, laneTimer: rng.range(1, 3), ph1: rng() * 6.28, ph2: rng() * 6.28,
         wash: false, hitCd: 0, x: 0, y: 0, h: 0, e: 0,
         lostT: 0, rocket: false, rockets: 0,
-        item: null, itemT: 0, shield: 0, stun: 0, magnet: 0, ps: 0,
+        item: null, itemT: 0, shield: 0, stun: 0, magnet: 0, ps: 0, turbo: 0,
       }));
       gridOrder.forEach((id, r) => {
         const row = Math.floor(r / perRow), col = r % perRow;
@@ -95,7 +95,8 @@
         }
       } else if (f.type === 'brake') {
         if (m.l >= f.l0 - 6 && m.l <= f.l1 + 6) {
-          if (m.shield > 0) { m.shield = 0; this.events.push({ type: 'block', id: m.id }); }
+          if (m.turbo > 0) { this.events.push({ type: 'immune', id: m.id, what: 'brake' }); }
+          else if (m.shield > 0) { m.shield = 0; this.events.push({ type: 'block', id: m.id }); }
           else {
             m.boost = Math.min(m.boost, -0.5 * this.v0);
             this.events.push({ type: 'brake', id: m.id });
@@ -180,6 +181,10 @@
         if (m.shield > 0) m.shield -= dt;
         if (m.stun > 0) { m.stun -= dt; if (m.stun <= 0) m.stunK = 0.3; }
         if (m.magnet > 0) m.magnet -= dt;
+        if (m.turbo > 0) {
+          m.turbo -= dt;
+          m.boost = Math.max(m.boost, 0.45 * v0);
+        }
         if (m.item && !m.finished) {
           m.itemT -= dt;
           if (m.itemT <= 0) this.useItem(m);
@@ -349,6 +354,9 @@
           this.events.push({ type: 'shield', id: m.id });
           break;
         case 'turbo':
+          // супер-сила: 3.5 секунды разгона и неуязвимости к тормозам, бананам и столбикам
+          m.turbo = 3.5;
+          m.stun = 0;
           m.boost = Math.max(m.boost, 0.85 * v0);
           this.events.push({ type: 'turbo', id: m.id });
           break;
@@ -408,6 +416,10 @@
           if (m.finished || m.z > 15) continue;
           if (m.id === h.owner && h.t < 1.5) continue;
           if (m.ps < h.s && m.s >= h.s && Math.abs(m.l - h.l) < R + 10) {
+            if (m.turbo > 0) {
+              if (!h.jumped) { h.jumped = true; this.events.push({ type: 'immune', id: m.id, what: 'banana' }); }
+              continue;
+            }
             this.hazards.splice(i, 1);
             this.hitMarble(m, 0.9, h.owner, 'slip');
             break;
@@ -475,6 +487,7 @@
       const feats = this.track.feats;
       const PR = 10;
       for (const m of this.marbles) {
+        if (m.turbo > 0) continue; // в турбо столбики не мешают
         for (let k = Math.max(0, m.fi - 2); k < Math.min(feats.length, m.fi + 2); k++) {
           const f = feats[k];
           if (f.type !== 'pegs') continue;

@@ -135,6 +135,9 @@
         case 'item': case 'turbo': case 'shield': case 'magnet':
           for (let i = 0; i < 8; i++) this.spark(m.x, m.y, FR.PLAYER_COLORS[(Math.random() * 12) | 0], 120, 0.4);
           break;
+        case 'immune':
+          for (let i = 0; i < 12; i++) this.spark(m.x, m.y, ['#fff3b0', '#ffc53d', '#ff6b1a'][i % 3], 150, 0.45);
+          break;
         case 'brake':
           for (let i = 0; i < 5; i++) this.spark(m.x, m.y, '#ff8a8a', 90, 0.3);
           break;
@@ -211,7 +214,7 @@
             color: th.ice ? '#ffffff' : '#d8b98a', kind: 'dust',
           });
         }
-        if (m.rocket && Math.random() < dt * (this.lite ? 14 : 40)) {
+        if ((m.rocket || m.turbo > 0) && Math.random() < dt * (this.lite ? 14 : 40)) {
           const b = this.tr.pos(m.s - R * 1.1, m.l + (Math.random() - 0.5) * 10, {});
           this.parts.push({
             x: b.x, y: b.y, vx: (Math.random() - 0.5) * 40, vy: (Math.random() - 0.5) * 40,
@@ -856,6 +859,16 @@
         ctx.beginPath();
         ctx.ellipse(x + 5 + m.z * 0.45, y + 7 + m.z * 0.6, R * 0.98, R * 0.85, 0, 0, TAU);
         ctx.fill();
+        if (m.turbo > 0) {
+          // огненная аура супер-силы
+          const fr = r * (2.3 + Math.sin(this.time * 18) * 0.15);
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.drawImage(SP.glow, x - fr, y - fr, fr * 2, fr * 2);
+          ctx.drawImage(SP.glow, x - fr * 0.7, y - fr * 0.7, fr * 1.4, fr * 1.4);
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.strokeStyle = 'rgba(255,120,30,0.9)'; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.arc(x, y, r + 4, 0, TAU); ctx.stroke();
+        }
         ctx.drawImage(f.face, x - r, y - r, r * 2, r * 2);
         ctx.save();
         ctx.translate(x, y);

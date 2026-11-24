@@ -359,7 +359,9 @@
     slip: ['🍌 {n} поскальзывается на банане!', '🍌 Ой! {n} наехал на банан!'],
     drop: ['🍌 {n} бросает банан на трассу!'],
     shield: ['🛡️ {n} включает щит!'],
-    turbo: ['🔥 {n} включает турбо!', '🔥 Турбо для {n}!'],
+    turbo: ['🔥 {n} включает супер-силу!', '🔥 Супер-сила у {n}! Никакие ловушки не страшны!', '🔥 {n} горит и летит вперёд!'],
+    immuneBrake: ['🔥 {n} пролетает тормоз, даже не заметив!', '🔥 Тормоз не берёт {n}!'],
+    immuneBanana: ['🔥 {n} перепрыгивает банан!', '🔥 Банан? {n} даже не заметил!'],
     magnet: ['🧲 {n} притягивается магнитом!'],
     zap: ['⚡ {n} бьёт молнией по всем впереди!', '⚡ Молния от {n}! Все впереди замедляются!'],
     brake: ['🛑 {n} попадает на тормоз!', '🛑 Тормоз! {n} сбрасывает скорость!'],
@@ -416,7 +418,8 @@
       case 'slip': say(fill(pick(PH.slip), e), { gap: 1500, speak: Math.random() < 0.5 }); break;
       case 'drop': if (Math.random() < 0.4) say(fill(pick(PH.drop), e), { gap: 4000 }); break;
       case 'shield': if (Math.random() < 0.4) say(fill(pick(PH.shield), e), { gap: 4000 }); break;
-      case 'turbo': if (Math.random() < 0.4) say(fill(pick(PH.turbo), e), { gap: 4000 }); break;
+      case 'turbo': if (Math.random() < 0.6) say(fill(pick(PH.turbo), e), { gap: 3000, speak: Math.random() < 0.4 }); break;
+      case 'immune': say(fill(pick(e.what === 'brake' ? PH.immuneBrake : PH.immuneBanana), e), { gap: 2500 }); break;
       case 'magnet': if (Math.random() < 0.5) say(fill(pick(PH.magnet), e), { gap: 4000 }); break;
       case 'zap': say(fill(pick(PH.zap), e), { force: true, speak: true }); break;
       case 'brake': if (Math.random() < 0.25) say(fill(pick(PH.brake), e), { gap: 5000 }); break;
@@ -578,7 +581,7 @@
       el.classList.toggle('first', r === 0);
       el.classList.toggle('fin', race.marbles[id].finished);
       const mm = race.marbles[id];
-      const badge = mm.item ? FR.Sprites.ITEM_EMOJI[mm.item] : mm.shield > 0 ? '🛡️' : mm.stun > 0 ? '💫' : '';
+      const badge = mm.item ? FR.Sprites.ITEM_EMOJI[mm.item] : mm.turbo > 0 ? '🔥' : mm.shield > 0 ? '🛡️' : mm.stun > 0 ? '💫' : '';
       const sb = el.querySelector('.sitem');
       if (sb.textContent !== badge) sb.textContent = badge;
       el.style.zIndex = 100 - r;
@@ -603,6 +606,7 @@
         case 'block': AU.peg(); break;
         case 'slip': AU.jump(); break;
         case 'turbo': AU.boost(); break;
+        case 'immune': AU.whoosh(); break;
         case 'brake': AU.rail(120); break;
         case 'zap': AU.zap(); break;
         case 'jump': AU.jump(); break;
