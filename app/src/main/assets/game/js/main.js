@@ -723,6 +723,7 @@
     show('menu');
     requestPlayers();
     setTimeout(() => $('btnStart').focus(), 200);
+    setTimeout(maybeInstall, 800);
   }
 
   function pause() {
@@ -810,7 +811,45 @@
     if (document.hidden && !AND) G.onAppPause();
   });
 
+  // ---------------- самообновление ----------------
+  const upd = { ready: null, can: false, asked: false };
+  G.onUpdateFound = function (name) {
+    $('upd').classList.remove('hidden');
+    $('updText').textContent = '⬇️ Скачиваю обновление ' + name + '…';
+    $('updBar').style.width = '0%';
+  };
+  G.onUpdateProgress = function (p) { $('updBar').style.width = p + '%'; };
+  G.onUpdateFailed = function () { $('upd').classList.add('hidden'); };
+  G.onUpdateReady = function (name, can) {
+    upd.ready = name; upd.can = can;
+    $('updText').textContent = '✅ Обновление ' + name + ' готово';
+    $('updBar').style.width = '100%';
+    maybeInstall();
+  };
+  function maybeInstall() {
+    if (!upd.ready || !AND) return;
+    if (state.mode !== 'menu') return; // во время гонки не мешаем — установим в меню
+    if (upd.can) {
+      toast('Устанавливаю версию ' + upd.ready + '… Игра перезапустится');
+      setTimeout(() => AND.installUpdate(), 1500);
+      upd.ready = null;
+    } else if (!upd.asked) {
+      upd.asked = true;
+      modal(
+        '<h3>Обновление ' + esc(upd.ready) + '</h3>' +
+        '<p>Новая версия уже скачана. Чтобы игра могла сама устанавливать обновления, разрешите ей установку приложений — это нужно сделать только один раз.</p>' +
+        '<button class="btn primary" id="mAllow">Разрешить и обновить</button>' +
+        '<button class="btn ghost" id="mLater">Позже</button>',
+        (c) => {
+          c.querySelector('#mAllow').onclick = () => { closeModal(); AND.installUpdate(); };
+          c.querySelector('#mLater').onclick = closeModal;
+        }
+      );
+    }
+  }
+
   // ---------------- старт ----------------
+  if (AND && AND.appVersion) $('ver').textContent = 'версия ' + AND.appVersion();
   FR.Sprites.build();
   if (AND && AND.isTv && AND.isTv()) document.body.classList.add('tv');
   requestPlayers();

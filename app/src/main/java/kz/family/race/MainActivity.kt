@@ -47,6 +47,10 @@ class MainActivity : ComponentActivity() {
     private var ttsReady = false
     private var pendingName: String? = null
     private var askedPermission = false
+    private var updateApk: java.io.File? = null
+    private var updateName: String = ""
+    private var updateChecked = false
+    private var installStarted = false
 
     private val pickPhoto = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         val name = pendingName
@@ -102,6 +106,7 @@ class MainActivity : ComponentActivity() {
         webView.loadUrl("https://appassets.androidplatform.net/assets/game/index.html")
 
         initTts()
+        main.postDelayed({ checkUpdate() }, 2500)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -116,6 +121,53 @@ class MainActivity : ComponentActivity() {
         val ui = (getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)?.currentModeType
         return ui == Configuration.UI_MODE_TYPE_TELEVISION ||
             packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+    }
+
+    // ---------- самообновление ----------
+    private fun checkUpdate() {
+        if (updateChecked) return
+        updateChecked = true
+        Thread {
+            try {
+                val r = Updater.check(this) ?: return@Thread
+                updateName = r.name
+                js("window.onUpdateFound && window.onUpdateFound(" + JSONObject.quote(r.name) + ")")
+                val f = Updater.download(this, r) { p ->
+                    js("window.onUpdateProgress && window.onUpdateProgress($p)")
+                }
+                if (f == null) {
+                    js("window.onUpdateFailed && window.onUpdateFailed()")
+                    return@Thread
+                }
+                updateApk = f
+                notifyUpdateReady()
+            } catch (e: Throwable) {
+                // нет интернета — попробуем в следующий запуск
+            }
+        }.start()
+    }
+
+    private fun notifyUpdateReady() {
+        val can = if (Updater.canInstall(this)) "true" else "false"
+        js("window.onUpdateReady && window.onUpdateReady(" + JSONObject.quote(updateName) + ", $can)")
+    }
+
+    private fun installUpdate() {
+        val f = updateApk ?: return
+        if (!Updater.canInstall(this)) {
+            try {
+                Updater.openInstallPermission(this)
+            } catch (e: Throwable) {
+                js("window.onToast && window.onToast('Не удалось открыть разрешения')")
+            }
+            return
+        }
+        if (installStarted) return
+        installStarted = true
+        executor.execute {
+            val ok = Updater.install(this, f)
+            if (!ok) js("window.onUpdateFailed && window.onUpdateFailed()")
+        }
     }
 
     // ---------- голос комментатора ----------
@@ -196,6 +248,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         js("window.onAppResume && window.onAppResume()")
+        if (updateApk != null && !installStarted) notifyUpdateReady()
     }
 
     override fun onDestroy() {
@@ -327,6 +380,18 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface
         fun getVoices(): String = voicesJson()
+
+        @JavascriptInterface
+        fun installUpdate() {
+            main.post { this@MainActivity.installUpdate() }
+        }
+
+        @JavascriptInterface
+        fun appVersion(): String = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+        } catch (e: Throwable) {
+            ""
+        }
 
         @JavascriptInterface
         fun setVoice(name: String) {

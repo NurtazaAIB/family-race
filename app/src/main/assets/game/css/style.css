@@ -501,3 +501,13 @@ body.lite #results { background: rgba(25, 14, 60, .9); }
 .voice-row { cursor: pointer; border-radius: 12px; padding-left: 8px !important; }
 .voice-row.on { background: #e9fbe9; }
 .voice-row .sm, .set-row .sm { font-size: 13px; opacity: .65; font-weight: 700; }
+
+.ver { text-align: center; font-size: 12px; opacity: .55; font-weight: 700; }
+.upd {
+  position: fixed; right: 12px; bottom: calc(var(--safe-bot) + 8px); z-index: 25;
+  background: rgba(20, 14, 50, .92); border: 1px solid rgba(255,255,255,.25);
+  border-radius: 14px; padding: 8px 12px; font-weight: 800; font-size: 13px; min-width: 200px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.35);
+}
+.updbar { margin-top: 6px; height: 6px; border-radius: 6px; background: rgba(255,255,255,.2); overflow: hidden; }
+.updbar i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #3ccf6e, #ffc53d); transition: width .2s; }
