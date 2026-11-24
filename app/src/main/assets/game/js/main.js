@@ -221,6 +221,7 @@
       toggleHtml('music', settings.music, '🎵 Музыка') +
       toggleHtml('sfx', settings.sfx, '🔊 Звуки') +
       toggleHtml('voice', settings.voice, '🎙️ Голос комментатора') +
+      (AND && AND.getVoices && !inRace ? '<button class="btn ghost" id="mVoice" style="margin:6px 0 4px">🗣️ Выбрать голос комментатора</button>' : '') +
       toggleHtml('lite', settings.lite, '⚡ Облегчённая графика') +
       (inRace ? '' :
         '<div class="set-row" style="flex-direction:column;align-items:stretch;gap:8px"><span>⏱ Длительность гонки</span>' +
@@ -257,11 +258,67 @@
         }
         const on = (id, fn) => { const el = c.querySelector(id); if (el) el.onclick = fn; };
         on('#mClose', closeModal);
+        on('#mVoice', voiceDialog);
         on('#mResume', resume);
         on('#mRestart', () => { closeModal(); state.paused = false; startRace(state.racers); });
         on('#mMenu', () => { closeModal(); toMenu(); });
       }
     );
+  }
+
+  const SAMPLE = ['Мама обгоняет папу и выходит в лидеры!', 'Финишная прямая! Кто же победит?', 'Попадание! Дедушка теряет скорость!'];
+  function voiceDialog() {
+    let voices = [];
+    try { voices = JSON.parse(AND.getVoices()); } catch (e) { voices = []; }
+    let tone = { rate: 1, pitch: 1 };
+    try { tone = JSON.parse(AND.getVoiceTone()); } catch (e) { /* по умолчанию */ }
+    const q = (v) => (v.quality >= 400 ? 'высокое качество' : v.quality >= 300 ? 'хорошее качество' : 'обычное');
+    let html = '<h3>🗣️ Голос комментатора</h3>';
+    if (!voices.length) {
+      html += '<p>На устройстве не найдено русских голосов. Установите «Синтезатор речи Google» и скачайте русский голос.</p>';
+    } else {
+      html += '<p style="font-size:14px">Нажмите на голос, чтобы послушать и выбрать.</p>';
+      voices.forEach((v, i) => {
+        html += '<div class="set-row voice-row' + (v.current ? ' on' : '') + '" data-n="' + esc(v.name) + '" tabindex="0">' +
+          '<span>' + (v.current ? '✅ ' : '▶️ ') + 'Голос ' + (i + 1) +
+          '<div class="sm">' + q(v) + (v.network ? ' · через интернет' : '') + '</div></span></div>';
+      });
+    }
+    const seg = (id, val, opts) => '<div class="seg" id="' + id + '">' + opts.map((o) =>
+      '<button data-v="' + o[0] + '" class="' + (Math.abs(val - o[0]) < 0.01 ? 'on' : '') + '">' + o[1] + '</button>').join('') + '</div>';
+    html += '<div class="set-row" style="flex-direction:column;align-items:stretch;gap:8px"><span>Скорость речи</span>' +
+      seg('mRate', tone.rate, [[0.9, 'Спокойно'], [1, 'Обычно'], [1.15, 'Бодро']]) + '</div>';
+    html += '<div class="set-row" style="flex-direction:column;align-items:stretch;gap:8px"><span>Тон голоса</span>' +
+      seg('mPitch', tone.pitch, [[0.9, 'Ниже'], [1, 'Обычный'], [1.1, 'Выше']]) + '</div>';
+    html += '<button class="btn ghost" id="mTts" style="margin-top:8px">Скачать больше голосов…</button>';
+    html += '<button class="btn secondary" id="mClose">Готово</button>';
+    modal(html, (c) => {
+      let k = 0;
+      const say = () => AND.speak(SAMPLE[k++ % SAMPLE.length]);
+      for (const row of c.querySelectorAll('.voice-row')) {
+        const act = () => { AND.setVoice(row.dataset.n); setTimeout(say, 150); setTimeout(voiceDialogRefresh, 200); };
+        row.onclick = act;
+        row.onkeydown = (e) => { if (e.key === 'Enter' || e.keyCode === 23) act(); };
+      }
+      const segBind = (id) => {
+        const el = c.querySelector(id);
+        for (const b of el.querySelectorAll('button')) b.onclick = () => {
+          for (const x of el.querySelectorAll('button')) x.classList.toggle('on', x === b);
+          if (id === '#mRate') tone.rate = +b.dataset.v; else tone.pitch = +b.dataset.v;
+          AND.setVoiceTone(tone.rate, tone.pitch);
+          say();
+        };
+      };
+      segBind('#mRate'); segBind('#mPitch');
+      c.querySelector('#mTts').onclick = () => AND.openTtsSettings();
+      c.querySelector('#mClose').onclick = closeModal;
+    });
+  }
+  function voiceDialogRefresh() {
+    const card = $('modalCard');
+    const st = card.scrollTop;
+    voiceDialog();
+    $('modalCard').scrollTop = st;
   }
 
   function statsDialog() {
@@ -325,7 +382,7 @@
     cmT = setTimeout(() => c.classList.remove('show'), opt.dur || 3200);
     if (opt.speak && settings.voice && AND && (opt.force || now - lastSpeak > 3500)) {
       lastSpeak = now;
-      AND.speak(text.replace(/[^\p{L}\p{N}\s!?,.\-—:]/gu, ''));
+      AND.speak(text.replace(/[^\p{L}\p{N}\s!?,.\-—:]/gu, '').replace(/!{2,}/g, '!').trim());
     }
     return true;
   }

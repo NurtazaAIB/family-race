@@ -101,14 +101,7 @@ class MainActivity : ComponentActivity() {
         webView.addJavascriptInterface(Bridge(), "Android")
         webView.loadUrl("https://appassets.androidplatform.net/assets/game/index.html")
 
-        tts = TextToSpeech(this) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                val r = tts?.setLanguage(Locale("ru", "RU")) ?: TextToSpeech.LANG_NOT_SUPPORTED
-                ttsReady = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
-                tts?.setSpeechRate(1.08f)
-                tts?.setPitch(1.05f)
-            }
-        }
+        initTts()
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -123,6 +116,64 @@ class MainActivity : ComponentActivity() {
         val ui = (getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)?.currentModeType
         return ui == Configuration.UI_MODE_TYPE_TELEVISION ||
             packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+    }
+
+    // ---------- голос комментатора ----------
+    private val prefs by lazy { getSharedPreferences("family_race", Context.MODE_PRIVATE) }
+
+    private fun initTts() {
+        // Голоса Google звучат заметно естественнее, чем встроенные движки некоторых телефонов и ТВ
+        val google = "com.google.android.tts"
+        val hasGoogle = try {
+            packageManager.getPackageInfo(google, 0); true
+        } catch (e: Throwable) {
+            false
+        }
+        val listener = TextToSpeech.OnInitListener { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                val r = tts?.setLanguage(Locale("ru", "RU")) ?: TextToSpeech.LANG_NOT_SUPPORTED
+                ttsReady = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
+                applyVoice(prefs.getString("voice", null))
+                tts?.setSpeechRate(prefs.getFloat("rate", 1.0f))
+                tts?.setPitch(prefs.getFloat("pitch", 1.0f))
+            }
+        }
+        tts = if (hasGoogle) TextToSpeech(this, listener, google) else TextToSpeech(this, listener)
+    }
+
+    private fun russianVoices(): List<android.speech.tts.Voice> {
+        val all = try { tts?.voices } catch (e: Throwable) { null } ?: return emptyList()
+        return all.filter {
+            it.locale.language == "ru" &&
+                !it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)
+        }.sortedWith(compareByDescending<android.speech.tts.Voice> { it.quality }
+            .thenByDescending { it.isNetworkConnectionRequired }
+            .thenBy { it.name })
+    }
+
+    /** Выбирает сохранённый голос или самый качественный русский. */
+    private fun applyVoice(name: String?) {
+        val list = russianVoices()
+        if (list.isEmpty()) return
+        val v = list.firstOrNull { it.name == name } ?: list.first()
+        try {
+            tts?.voice = v
+        } catch (e: Throwable) {
+        }
+    }
+
+    private fun voicesJson(): String {
+        val arr = org.json.JSONArray()
+        val current = try { tts?.voice?.name } catch (e: Throwable) { null }
+        for (v in russianVoices()) {
+            val o = JSONObject()
+            o.put("name", v.name)
+            o.put("quality", v.quality)
+            o.put("network", v.isNetworkConnectionRequired)
+            o.put("current", v.name == current)
+            arr.put(o)
+        }
+        return arr.toString()
     }
 
     private fun hideSystemBars() {
@@ -273,6 +324,39 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface
         fun hasVoice(): Boolean = ttsReady
+
+        @JavascriptInterface
+        fun getVoices(): String = voicesJson()
+
+        @JavascriptInterface
+        fun setVoice(name: String) {
+            prefs.edit().putString("voice", name).apply()
+            applyVoice(name)
+        }
+
+        @JavascriptInterface
+        fun setVoiceTone(rate: Float, pitch: Float) {
+            prefs.edit().putFloat("rate", rate).putFloat("pitch", pitch).apply()
+            tts?.setSpeechRate(rate)
+            tts?.setPitch(pitch)
+        }
+
+        @JavascriptInterface
+        fun getVoiceTone(): String = JSONObject()
+            .put("rate", prefs.getFloat("rate", 1.0f).toDouble())
+            .put("pitch", prefs.getFloat("pitch", 1.0f).toDouble())
+            .toString()
+
+        @JavascriptInterface
+        fun openTtsSettings() {
+            main.post {
+                try {
+                    startActivity(android.content.Intent("com.android.settings.TTS_SETTINGS"))
+                } catch (e: Throwable) {
+                    js("window.onToast && window.onToast('Не удалось открыть настройки')")
+                }
+            }
+        }
 
         @JavascriptInterface
         fun vibrate(ms: Int) {
